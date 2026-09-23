@@ -65,11 +65,10 @@ export function rowFor(run: RunRecord, rows: readonly ReviewRow[]): ReviewRow {
   return hit;
 }
 
-/** One runner's runs under one configuration, paired by task. */
-export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[], spec: AxisSpec): RunPairSet {
-  const first = runs[0];
-  if (first === undefined) throw new Error("no runs to pair");
+type Slot = { present?: RunRecord; absent?: RunRecord };
 
+/** The one runner these runs belong to; refused when there are several. */
+function soleRunner(runs: readonly RunRecord[]): string {
   const runners = [...new Set(runs.map((r) => r.runner))].sort(byCodeUnit);
   if (runners.length > 1) {
     throw new Error(
@@ -77,34 +76,40 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
         `pooling runners is buildJoint's explicit act`,
     );
   }
-  const configs = new Set(runs.map((r) => configKey(r.conditions)));
-  if (configs.size > 1) throw new Error(`runs under ${configs.size} configurations; one observation is one configuration`);
+  return runners[0] as string;
+}
 
+function armsOf(spec: AxisSpec): { present: string; absent: string } {
   const present = spec.resources[0];
   const absent = spec.resources[1];
   if (present === undefined || absent === undefined) {
     throw new Error(`axis ${spec.axis} declares fewer than two resource values`);
   }
+  return { present, absent };
+}
 
-  for (const r of runs) {
-    if (r.arm !== present && r.arm !== absent) {
-      throw new Error(`run ${r.run_id} is on arm ${r.arm}, which is neither ${present} nor ${absent}`);
-    }
-    const withheld = spec.graph_withheld_on;
-    // Completed runs only. A run that failed at `ingest` on the graph arm has no
-    // graph to digest, and it never pairs, so its digest reaches no measurement —
-    // refusing it would block recording the very failure §6.1 requires be kept.
-    if (withheld === undefined || !r.outcome.ok) continue;
-    if (r.arm === withheld && r.conditions.graph_digest !== null) {
-      throw new Error(`run ${r.run_id} is on the ${withheld} arm yet carries a graph_digest; that arm has no graph`);
-    }
-    if (r.arm !== withheld && r.conditions.graph_digest === null) {
-      throw new Error(`run ${r.run_id} is on the ${r.arm} arm with no graph_digest`);
-    }
+/** One run's arm, and — for completed runs — the axis's graph rule. */
+function checkRun(r: RunRecord, spec: AxisSpec, present: string, absent: string): void {
+  if (r.arm !== present && r.arm !== absent) {
+    throw new Error(`run ${r.run_id} is on arm ${r.arm}, which is neither ${present} nor ${absent}`);
   }
+  const withheld = spec.graph_withheld_on;
+  // Completed runs only. A run that failed at `ingest` on the graph arm has no
+  // graph to digest, and it never pairs, so its digest reaches no measurement —
+  // refusing it would block recording the very failure §6.1 requires be kept.
+  if (withheld === undefined || !r.outcome.ok) return;
+  if (r.arm === withheld && r.conditions.graph_digest !== null) {
+    throw new Error(`run ${r.run_id} is on the ${withheld} arm yet carries a graph_digest; that arm has no graph`);
+  }
+  if (r.arm !== withheld && r.conditions.graph_digest === null) {
+    throw new Error(`run ${r.run_id} is on the ${r.arm} arm with no graph_digest`);
+  }
+}
 
+/** Completed runs slotted by task and arm; failed runs only counted. */
+function slotByTask(runs: readonly RunRecord[], present: string): { byTask: Map<string, Slot>; failed: number } {
   let failed = 0;
-  const byTask = new Map<string, { present?: RunRecord; absent?: RunRecord }>();
+  const byTask = new Map<string, Slot>();
   for (const r of runs) {
     if (!r.outcome.ok) {
       failed += 1;
@@ -122,7 +127,11 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
     slot[side] = r;
     byTask.set(k, slot);
   }
+  return { byTask, failed };
+}
 
+/** Tasks with both arms become pairs, in task order; tasks with one arm are counted. */
+function pairSlots(byTask: ReadonlyMap<string, Slot>, rows: readonly ReviewRow[]): { pairs: RunPair[]; unpaired: number } {
   const pairs: RunPair[] = [];
   let unpaired = 0;
   for (const k of [...byTask.keys()].sort(byCodeUnit)) {
@@ -138,6 +147,21 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
       absentRow: rowFor(slot.absent, rows),
     });
   }
+  return { pairs, unpaired };
+}
 
-  return { runner: runners[0] as string, config: configOf(first.conditions), pairs, failed, unpaired };
+/** One runner's runs under one configuration, paired by task. */
+export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[], spec: AxisSpec): RunPairSet {
+  const first = runs[0];
+  if (first === undefined) throw new Error("no runs to pair");
+  const runner = soleRunner(runs);
+  const configs = new Set(runs.map((r) => configKey(r.conditions)));
+  if (configs.size > 1) throw new Error(`runs under ${configs.size} configurations; one observation is one configuration`);
+
+  const { present, absent } = armsOf(spec);
+  for (const r of runs) checkRun(r, spec, present, absent);
+
+  const { byTask, failed } = slotByTask(runs, present);
+  const { pairs, unpaired } = pairSlots(byTask, rows);
+  return { runner, config: configOf(first.conditions), pairs, failed, unpaired };
 }
