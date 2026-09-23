@@ -18,9 +18,17 @@ const jsonl = (rows: object[]) => `${rows.map((r) => JSON.stringify(r)).join("\n
 // alice's reviews show the graph helping; bob's, on the same task, the opposite.
 const bobGraph = withVerdict(graphRow, "uncertain");
 const bobAblated = withVerdict(ablatedRow, "confirmed");
-writeFileSync(at("alice.jsonl"), jsonl([graphRow, ablatedRow]));
-writeFileSync(at("bob.jsonl"), jsonl([bobGraph, bobAblated]));
-writeFileSync(at("both.jsonl"), jsonl([graphRow, ablatedRow, bobGraph, bobAblated]));
+/**
+ * Written after the intents are announced, stamped with the time of writing —
+ * the order the workflow has in reality: announce, then review, then record.
+ */
+function writeReviews(): void {
+  const reviewedAt = new Date().toISOString();
+  const stamp = (rows: object[]) => rows.map((r) => ({ ...r, reviewed_at: reviewedAt }));
+  writeFileSync(at("alice.jsonl"), jsonl(stamp([graphRow, ablatedRow])));
+  writeFileSync(at("bob.jsonl"), jsonl(stamp([bobGraph, bobAblated])));
+  writeFileSync(at("both.jsonl"), jsonl(stamp([graphRow, ablatedRow, bobGraph, bobAblated])));
+}
 writeFileSync(at("graph.json"), JSON.stringify(conditionsFor(true)));
 writeFileSync(at("ablated.json"), JSON.stringify(conditionsFor(false)));
 
@@ -50,6 +58,7 @@ describe("runs CLI end to end", () => {
   });
 
   it("records each run against its own reviews file", () => {
+    writeReviews();
     for (const runner of ["alice", "bob"]) {
       for (const arm of ["graph", "ablated"]) {
         expect(main(["run", "--intent", intentOf(runner, arm), "--reviews", at(`${runner}.jsonl`), "--overlay", overlay])).toBe(0);

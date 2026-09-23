@@ -45,10 +45,19 @@ export function intentFor(i: IntentInput): RunIntent {
 /**
  * Where a review row shows something other than what the intent announced.
  *
- * `slice` and `profile` are not compared: they are runner parameters the row
- * does not record. An absent `skeptic_provider` and null are the same, as
- * `genomeOf` treats them. An absent `temperature` maps to null, because
- * `Conditions` has no way to say "absent" other than null.
+ * `profile` is not compared: the row does not record it. `slice` is compared
+ * against `pr_slice` only when the run was restricted to one slice — `pr_slice`
+ * is the pull request's classification, so an ablated run of a graph-slice PR
+ * still reads `graph`, and a run over `all` slices sees every value. `had_graph`
+ * must agree with whether a graph was declared: a graph-arm run whose ingest
+ * silently failed is the confound this axis measures. An absent
+ * `skeptic_provider` and null are the same, as `genomeOf` treats them. An absent
+ * `temperature` maps to null, because `Conditions` has no way to say "absent"
+ * other than null.
+ *
+ * `reviewed_at` is when the review actually ran. A review that ran before the
+ * intent was announced is not pre-registered, whatever `observed_at` says —
+ * `observed_at` is only when the run was recorded.
  */
 export function rowProblems(intent: RunIntent, row: ReviewRow): string[] {
   const problems: string[] = [];
@@ -72,6 +81,13 @@ export function rowProblems(intent: RunIntent, row: ReviewRow): string[] {
   cmp("skeptic_provider", c.skeptic_provider, row.skeptic_provider ?? null);
   cmp("temperature", c.temperature, raw.temperature === undefined ? null : raw.temperature);
   cmp("guardian_sha", c.guardian_sha, row.guardian_sha);
+  cmp("had_graph", c.graph_digest !== null, row.had_graph);
+  if (c.slice !== "all") cmp("slice", c.slice, row.pr_slice);
+  if (Date.parse(row.reviewed_at) < Date.parse(intent.announced_at)) {
+    problems.push(
+      `reviewed at ${row.reviewed_at}, before it was announced at ${intent.announced_at}; that is not a pre-registration`,
+    );
+  }
   return problems;
 }
 

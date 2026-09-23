@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { dischargeProblems, failedRunFor, intentFor, rowProblems, runFor } from "../src/record.js";
 import { findingsDigest, sealRun } from "../src/runs.js";
 import { ablatedRow, conditionsFor, graphRow, recorded, T0 } from "./helpers/fixtures.js";
+import type { IntentInput } from "../src/record.js";
+import type { RunIntent } from "../src/runs.js";
+
+const inputOf = (i: RunIntent): IntentInput => ({
+  runner: i.runner,
+  task: i.task,
+  arm: i.arm,
+  conditions: i.conditions,
+  announcedAt: i.announced_at,
+});
 
 describe("runFor", () => {
   const { intent, run } = recorded("alice", graphRow);
@@ -28,7 +38,25 @@ describe("runFor", () => {
   });
 
   it("refuses a run observed before its intent was announced", () => {
-    expect(() => runFor(intent, graphRow, "2026-09-23T09:00:00+00:00")).toThrow(/before it was announced/);
+    expect(() => runFor(intent, graphRow, "2026-08-12T08:00:00+00:00")).toThrow(/before it was announced/);
+  });
+
+  it("refuses a row reviewed before its intent was announced", () => {
+    const late = intentFor({ ...inputOf(intent), announcedAt: "2026-08-12T10:30:00+00:00" });
+    expect(() => runFor(late, graphRow, "2026-08-12T11:00:00+00:00")).toThrow(/reviewed at .* before it was announced/);
+  });
+
+  it("refuses a graph-arm row whose graph was never built", () => {
+    expect(() => runFor(intent, { ...graphRow, had_graph: false }, "2026-08-12T11:00:00+00:00")).toThrow(/had_graph/);
+  });
+
+  it("refuses a row from another slice when the run was restricted to one", () => {
+    expect(() => runFor(intent, { ...graphRow, pr_slice: "diff-only" }, "2026-08-12T11:00:00+00:00")).toThrow(/slice/);
+  });
+
+  it("does not compare slice when the run covered every slice", () => {
+    const all = intentFor({ ...inputOf(intent), conditions: { ...intent.conditions, slice: "all" } });
+    expect(runFor(all, graphRow, "2026-08-12T11:00:00+00:00").outcome.ok).toBe(true);
   });
 
   it("records a parse failure the producer reported as a failed run", () => {

@@ -6,8 +6,9 @@ export const rows: readonly ReviewRow[] = readReviews(readManifest("tests/fixtur
 export const graphRow = rows[0] as ReviewRow;
 export const ablatedRow = rows[1] as ReviewRow;
 
-export const T0 = "2026-09-23T10:00:00+00:00";
-export const T1 = "2026-09-23T11:00:00+00:00";
+/** Announced before the fixture rows were reviewed (10:00 and 10:01), recorded after. */
+export const T0 = "2026-08-12T09:00:00+00:00";
+export const T1 = "2026-08-12T11:00:00+00:00";
 
 /** The fixture rows' conditions; the graph arm carries a digest, the ablated arm none. */
 export const conditionsFor = (graph: boolean, graphDigest = "sha256:g1"): Conditions => ({

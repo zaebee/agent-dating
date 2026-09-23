@@ -40,7 +40,7 @@ describe("auditIntents", () => {
   });
 
   it("flags a run observed before its intent was announced", () => {
-    const early = variant({ observed_at: "2026-09-23T09:00:00+00:00" });
+    const early = variant({ observed_at: "2026-08-12T08:00:00+00:00" });
     expect(auditIntents([g.intent], [early]).mismatched[0]?.problems.join()).toMatch(/not a pre-registration/);
   });
 });
