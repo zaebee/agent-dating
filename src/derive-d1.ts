@@ -20,38 +20,58 @@ const METRICS: Record<string, (row: ReviewRow) => number | null> = {
 
 const mean = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
 
+export interface Measured<T> {
+  readonly pair: T;
+  readonly withValue: number;
+  readonly withoutValue: number;
+  readonly diff: number;
+}
+
+export interface Measurement<T> {
+  readonly kept: readonly Measured<T>[];
+  readonly dropped: number;
+  readonly spread: [number, number];
+  readonly informative: number;
+  readonly with: number;
+  readonly without: number;
+  readonly delta: number;
+  readonly admissible: boolean;
+  readonly because: string[];
+}
+
 /**
- * One D1 over a pair set, or null when nothing survives.
+ * Per-pair differences, sign-normalised, with the gates applied.
  *
- * The per-pair difference is computed per review and then differenced — never
- * pooled and then differenced. The arms differ sharply in findings per review,
- * so a pooled difference would be dominated by the arm that talks more, and
- * both gates run on these differences, so pooling would change which
- * observations are admissible.
+ * Computed per review and then differenced — never pooled and then differenced.
+ * The arms differ sharply in findings per review, so a pooled difference would
+ * be dominated by the arm that talks more, and both gates run on these
+ * differences. Shared by both D1 versions and by joint observations, so the
+ * three cannot drift apart.
  */
-export function deriveD1(set: PairSet, spec: AxisSpec, opts: DeriveOptions): D1 | null {
-  const metric = METRICS[opts.metric];
-  if (!metric) throw new Error(`no implementation for metric ${JSON.stringify(opts.metric)}`);
-
-  const present = requireResource(spec, spec.resources[0] as string);
-  const absent = requireResource(spec, spec.resources[1] as string);
-
-  const kept: { pair: Pair; withValue: number; withoutValue: number; diff: number }[] = [];
-  let dropped = 0;
+export function measure<T>(
+  pairs: readonly T[],
+  rowsOf: (pair: T) => { present: ReviewRow; absent: ReviewRow },
+  metricName: string,
+  direction: "higher-better" | "lower-better",
+): Measurement<T> | null {
+  const metric = METRICS[metricName];
+  if (!metric) throw new Error(`no implementation for metric ${JSON.stringify(metricName)}`);
   // `lower-better` means a fall is an improvement, so the raw difference is
   // multiplied by -1 exactly once, here, and never re-applied downstream.
-  const sign = opts.direction === "lower-better" ? -1 : 1;
+  const sign = direction === "lower-better" ? -1 : 1;
 
-  for (const pair of set.pairs) {
-    const a = metric(pair.present);
-    const b = metric(pair.absent);
+  const kept: Measured<T>[] = [];
+  let dropped = 0;
+  for (const pair of pairs) {
+    const { present, absent } = rowsOf(pair);
+    const a = metric(present);
+    const b = metric(absent);
     if (a === null || b === null) {
       dropped += 1;
       continue;
     }
     kept.push({ pair, withValue: a, withoutValue: b, diff: round4((a - b) * sign) });
   }
-
   if (kept.length === 0) return null;
 
   const diffs = kept.map((k) => k.diff);
@@ -59,9 +79,28 @@ export function deriveD1(set: PairSet, spec: AxisSpec, opts: DeriveOptions): D1 
   const spread: [number, number] = [sorted[0] as number, sorted[sorted.length - 1] as number];
   const informative = diffs.filter((d) => d !== 0).length;
   const verdict = admissibility(spread, informative);
+  return {
+    kept,
+    dropped,
+    spread,
+    informative,
+    with: round4(mean(kept.map((k) => k.withValue))),
+    without: round4(mean(kept.map((k) => k.withoutValue))),
+    delta: round4(mean(diffs)),
+    admissible: verdict.admissible,
+    because: [...verdict.because],
+  };
+}
 
-  const first = kept[0] as (typeof kept)[number];
-  const record = {
+/** One version-1 D1 over a pair set, or null when nothing survives. */
+export function deriveD1(set: PairSet, spec: AxisSpec, opts: DeriveOptions): D1 | null {
+  const present = requireResource(spec, spec.resources[0] as string);
+  const absent = requireResource(spec, spec.resources[1] as string);
+  const m = measure(set.pairs, (p: Pair) => ({ present: p.present, absent: p.absent }), opts.metric, opts.direction);
+  if (!m) return null;
+  const first = m.kept[0] as Measured<Pair>;
+
+  return D1Schema.parse({
     schema_version: RECORD_SCHEMA_VERSION,
     subject: subjectOf(first.pair.present),
     axis: spec.axis,
@@ -69,31 +108,29 @@ export function deriveD1(set: PairSet, spec: AxisSpec, opts: DeriveOptions): D1 
     self_asserted: false as const,
     observed_at: opts.observedAt,
     unestablished:
-      `dropped ${dropped} pair(s) whose metric was undefined, and ${set.unplanned} row(s) with no ` +
+      `dropped ${m.dropped} pair(s) whose metric was undefined, and ${set.unplanned} row(s) with no ` +
       `arm at all; says nothing about identities absent from this corpus, nor about any axis but ${spec.axis}`,
     resource: { present, absent },
     pairing: {
       key: [...set.key],
-      pairs: kept.length,
-      informative_pairs: informative,
-      instances: kept.map((k) => k.pair.instance),
+      pairs: m.kept.length,
+      informative_pairs: m.informative,
+      instances: m.kept.map((k) => k.pair.instance),
     },
     metric: {
       name: opts.metric,
       direction: opts.direction,
-      with: round4(mean(kept.map((k) => k.withValue))),
-      without: round4(mean(kept.map((k) => k.withoutValue))),
-      delta: round4(mean(diffs)),
-      spread,
+      with: m.with,
+      without: m.without,
+      delta: m.delta,
+      spread: m.spread,
     },
     judge: {
       id: opts.judgeId,
       goldens_version: VERDICT_DERIVED_METRICS.has(opts.metric) ? null : "unversioned",
       self: false,
     },
-    admissible: verdict.admissible,
-    inadmissible_because: [...verdict.because],
-  };
-
-  return D1Schema.parse(record);
+    admissible: m.admissible,
+    inadmissible_because: m.because,
+  });
 }

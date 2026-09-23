@@ -5,6 +5,7 @@
       "graph",
       "ablated"
     ],
+    "graph_withheld_on": "ablated",
     "identifying": [
       "url",
       "head_sha",
