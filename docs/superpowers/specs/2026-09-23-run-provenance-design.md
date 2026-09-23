@@ -1,6 +1,16 @@
 # Run provenance — design
 
-**Status:** v1. Approved in brainstorming, not implemented.
+**Status:** v1.1. Approved in brainstorming, amended by planning.
+
+**What changed in v1.1.** Planning found that §3's claim — supersession "works
+unchanged" — readmitted the mirror attack §5 defends against: a joint covering an
+honest supplier's runs plus fabricated ones is a later superset and would
+supersede the honest observation. Supersession now never crosses a contributor
+set (§3). To make that possible every version-2 D1 names its contributors, and
+the joint-only fields sit in one block (§5). Three gaps were also closed: a joint
+in which no task was run by two contributors is refused (§5.1), an observation
+holds at most one completed run per task per arm (§6.1), and intents are
+announced after `prepare` and before `review` (§4.1).
 
 **Scope:** sub-project 3 of 4, narrowed. This specifies what a run must record so
 that a party other than the one who ran it can assemble the same inputs and run
@@ -66,9 +76,17 @@ supersession cannot fire: §5.7 of the profile spec supersedes an observation
 whose instances are a *subset* of a later one's, and a re-run over the same
 tasks enlarges nothing.
 
-With instances identifying runs, a re-run genuinely adds instances, a joint
-observation covering both is a superset, and the existing supersession rule
-works unchanged.
+With instances identifying runs, a re-run genuinely adds instances. A runner's
+own later, larger observation is a superset of its earlier one and supersedes it
+under the existing rule.
+
+**Supersession never crosses a contributor set**, and this is not a detail. A
+joint observation covering an honest supplier's runs plus fabricated ones is also
+a later superset, and under an unrestricted rule it would supersede the honest
+record — suppressing it, which is the mirror attack §5 exists to prevent,
+readmitted through supersession. Observations are grouped by their contributors
+before supersession is computed, so a joint supersedes only an earlier joint of
+the same runners.
 
 **`schema_version` goes to 2.** By invariant 5 of the profile spec, observations
 of different schema versions are never compared or pooled. The observation
@@ -100,6 +118,13 @@ interface RunIntent {
   unestablished: string;
 }
 ```
+
+**An intent is announced after `prepare` and before `review`.** It must carry
+`graph_digest`, and the graph exists only once `prepare` has built it. Announcing
+before `prepare` would leave the one condition this axis is about undeclared.
+Re-running `prepare` to degrade the *present* arm's graph would shrink the delta,
+which is against a manipulating supplier's interest; the withheld arm has no
+graph to degrade.
 
 ### 4.2 `R` — a run
 
@@ -173,6 +198,10 @@ conditions match except `graph_digest` did not run against the same graph, and
 pooled, and the divergence is recorded on the face of the joint observation,
 where a consumer decides what it is worth.
 
+A joint in which **no task was run by more than one contributor is refused**. It
+re-runs nothing and so checks nothing, and `graph_agreement` over zero shared
+tasks would report "identical" about a comparison that never happened.
+
 Stating the limit is the point. A scheme that asserted "the graph arm is
 reproducible" and shipped would be asserting the one thing nobody here has
 checked.
@@ -206,15 +235,20 @@ does. The two ids are not derivable from each other, and `R` names its
 
 ## 5. Joint observations
 
-A joint observation is a D1 carrying four additional fields. It is not a new
-record kind.
+Every version-2 D1 names its `contributors` — one runner for an ordinary
+observation, two or more for a joint — because §3's supersession groups by them.
+A joint additionally carries one block. It is not a new record kind.
 
 ```ts
-contributors: string[];    // runner ids, sorted
-cites: string[];           // observation ids it draws from
-graph_agreement: "identical" | "divergent" | "withheld-both";
-contested_tasks: number;   // tasks where two runs disagree in sign
+contributors: string[];    // runner ids, sorted; on every version-2 D1
+joint?: {                  // present iff contributors.length > 1
+  cites: string[];         // observation ids it draws from, sorted
+  graph_agreement: "identical" | "divergent" | "withheld-both";
+  contested_tasks: number; // tasks where two runs disagree in sign
+};
 ```
+
+Nesting makes "all or none" hold by construction rather than by a check.
 
 **Anyone may build one, and nothing pools automatically.** This is the defence
 against the mirror attack, which the issue did not name: if foreign pairs merged
@@ -271,6 +305,11 @@ agrees with itself, never whether the set is complete.
 A failed arm yields no pair, which derivation already handles and already
 counts — `unestablished` carries "dropped N pair(s) whose metric was undefined".
 What changes is that the dropped pair now has an addressable reason.
+
+An observation holds **at most one completed run per task per arm per runner**.
+When a runner has two, which to pair with the other arm is a choice, and a choice
+at that point is where selection hides. They are refused together and must be
+recorded in separate observations.
 
 ### 6.2 An announced intent with no run is a visible gap
 
