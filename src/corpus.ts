@@ -83,8 +83,11 @@ export function readManifest(path: string): Manifest {
   return { dir: dirname(path), ...m };
 }
 
-function rows<T>(m: Manifest, files: readonly string[], schema: z.ZodType<T>): T[] {
-  const out: T[] = [];
+// Generic over the schema, not over its output type: `findings` carries a
+// `.default([])`, so the schema's input and output types differ, and
+// `z.ZodType<T>` collapses them into one.
+function rows<S extends z.ZodTypeAny>(m: Manifest, files: readonly string[], schema: S): z.infer<S>[] {
+  const out: z.infer<S>[] = [];
   for (const file of files) {
     const path = resolve(m.dir, m.base, file);
     const text = readFileSync(path, "utf8");

@@ -1,7 +1,7 @@
 # Deficit profile — design
 
-**Status:** v3. Approved in brainstorming, revised after two rounds of external
-review, not implemented.
+**Status:** v3.5. Approved in brainstorming, revised after two rounds of external
+review and once by implementation.
 **Scope:** sub-project 1 of 4. This specifies *the profile*, the rules that
 derive it, and the rules that decide whether a derived observation is
 admissible. It does not specify the matching engine's implementation, the run
@@ -18,9 +18,6 @@ undecidability is monolithic, which changes which metric this axis should be
 measured on. Both are fixed below, and the honest result is stated in §5.6:
 **this corpus supports no admissible D1 observation at all.**
 
-**What changed in v3.5.** Implementation found the corpus does not carry an
-empty-string `arm`: 45 rows have no `arm` field at all. Corrected in §5.2 step 3.
-
 **What changed in v3.** A second review round, mostly operational precision.
 `uncertain_rate` now has a written formula and an explicit per-pair-not-pooled
 rule (§5.1); sign normalisation is a derivation step rather than a property of a
@@ -33,6 +30,9 @@ claim of v2 was wrong and is corrected: `ontology` was cited as a category that
 never came up, and it came up five times and was ruled every time (§5.4). The
 floor of five in §5.5 is now labelled a convention rather than given a
 justification that did not hold.
+
+**What changed in v3.5.** Implementation found the corpus does not carry an
+empty-string `arm`: 45 rows have no `arm` field at all. Corrected in §5.2 step 3.
 
 ---
 
