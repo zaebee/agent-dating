@@ -1,7 +1,7 @@
 # Deficit profile — design
 
-**Status:** v3. Approved in brainstorming, revised after two rounds of external
-review, not implemented.
+**Status:** v3.5. Approved in brainstorming, revised after two rounds of external
+review and once by implementation.
 **Scope:** sub-project 1 of 4. This specifies *the profile*, the rules that
 derive it, and the rules that decide whether a derived observation is
 admissible. It does not specify the matching engine's implementation, the run
@@ -30,6 +30,9 @@ claim of v2 was wrong and is corrected: `ontology` was cited as a category that
 never came up, and it came up five times and was ruled every time (§5.4). The
 floor of five in §5.5 is now labelled a convention rather than given a
 justification that did not hold.
+
+**What changed in v3.5.** Implementation found the corpus does not carry an
+empty-string `arm`: 45 rows have no `arm` field at all. Corrected in §5.2 step 3.
 
 ---
 
@@ -369,9 +372,20 @@ so a deliberately ablated run and a plain diff-only run land in one identity;
 `breeding.md` acknowledges it ("a controlled removal and a plain diff-only run
 are one bee here") and is right to, because for a *track record* the question is
 how the review was performed. For deficit derivation it is fatal: the ablated
-arm is controlled and plain diff-only is confounded. The corpus carries three
-`arm` values — `"graph"`, `"ablated"`, and the empty string, which is "nobody
-planned this either way".
+arm is controlled and plain diff-only is confounded.
+
+The corpus carries two `arm` values — `"graph"` (51 rows) and `"ablated"` (19) —
+and **45 rows where the field is absent entirely**, which is "nobody planned
+this either way". Absent, not blank: no row carries an empty string. `arm` is
+therefore optional in the reader and is never defaulted, because `.default("")`
+would make an unplanned run indistinguishable from a planned one written blank.
+
+> v2 of this document said the corpus carried three values including the empty
+> string. It does not. That reading came from joining `undefined` into a string
+> during the measurement — the `?? ""` collapse this document cites
+> `../p-e/src/adapters/apex.ts` for, committed in the section that specifies
+> invariant 6. Recorded rather than deleted, for the reason §5.6 gives for the
+> other one.
 
 **Step 4 — normalise the sign.** The per-pair difference is computed as
 `with − without` and then multiplied by `−1` when `direction` is

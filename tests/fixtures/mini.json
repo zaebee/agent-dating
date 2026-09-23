@@ -1,0 +1,1 @@
+{ "base": "mini", "reviews": ["reviews.jsonl"], "judged": ["judged.jsonl"] }
