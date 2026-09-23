@@ -1,0 +1,176 @@
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { z } from "zod";
+import { canonicalJson } from "./canonical.js";
+import { required, timestampOf } from "./records.js";
+
+export const RUN_SCHEMA_VERSION = 2;
+
+export const digest = (data: string | Uint8Array): string =>
+  `sha256:${createHash("sha256").update(data).digest("hex")}`;
+
+/**
+ * What a second party needs to assemble the same inputs.
+ *
+ * Strict: an unknown key is refused rather than hashed in, because a condition
+ * nobody here models is one nobody here can hold equal.
+ */
+export const ConditionsSchema = z
+  .object({
+    review_fingerprint: z.string().min(1),
+    finder_model: z.string().min(1),
+    finder_provider: z.string().min(1),
+    skeptic_model: z.string().min(1).nullable(),
+    skeptic_provider: z.string().min(1).nullable(),
+    temperature: z.number().nullable(),
+    slice: z.enum(["all", "graph", "diff-only"]),
+    profile: z.string().min(1),
+    guardian_sha: z.string().min(1),
+    /** Null iff the arm withholds the graph. Detects divergence; claims no determinism. */
+    graph_digest: z.string().min(1).nullable(),
+  })
+  .strict();
+export type Conditions = z.infer<typeof ConditionsSchema>;
+export type ConditionKey = keyof Conditions;
+
+/**
+ * Stated by the runner and unprovable by the record: the models arrive through
+ * environment variables, not flags. A list rather than prose, so a consumer can
+ * filter on it. Sorted, because it is hashed.
+ */
+export const DECLARED_NOT_VERIFIED: readonly ConditionKey[] = [
+  "finder_model",
+  "finder_provider",
+  "skeptic_model",
+  "skeptic_provider",
+  "temperature",
+];
+
+export const TaskSchema = z
+  .object({ url: z.string().min(1), head_sha: z.string().min(1), project: z.string().min(1) })
+  .strict();
+export type Task = z.infer<typeof TaskSchema>;
+
+export const FAILURES = ["prepare", "ingest", "model-error", "parse", "timeout"] as const;
+export type FailureKind = (typeof FAILURES)[number];
+
+const OutcomeSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      ok: z.literal(true),
+      findings_digest: z.string().min(1),
+      findings_count: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z.object({ ok: z.literal(false), failure: z.enum(FAILURES), detail: required("detail") }).strict(),
+]);
+
+const IntentBody = z
+  .object({
+    schema_version: z.literal(RUN_SCHEMA_VERSION),
+    kind: z.literal("I"),
+    announced_at: timestampOf("announced_at"),
+    runner: z.string().min(1),
+    task: TaskSchema,
+    arm: z.string().min(1),
+    conditions: ConditionsSchema,
+    unestablished: required("unestablished"),
+  })
+  .strict();
+
+const RunBody = z
+  .object({
+    schema_version: z.literal(RUN_SCHEMA_VERSION),
+    kind: z.literal("R"),
+    intent_id: z.string().min(1),
+    observed_at: timestampOf("observed_at"),
+    runner: z.string().min(1),
+    task: TaskSchema,
+    arm: z.string().min(1),
+    conditions: ConditionsSchema,
+    outcome: OutcomeSchema,
+    declared_not_verified: z.array(ConditionsSchema.keyof()),
+    unestablished: required("unestablished"),
+  })
+  .strict();
+
+const sealedId = (body: unknown): string => digest(canonicalJson(body));
+
+const idMismatch = (field: string, got: string, expected: string) =>
+  `${field} ${got} does not match its contents (expected ${expected}); the record was altered after sealing`;
+
+/** No outcome in the hash: an intent exists before its outcome does. */
+export const RunIntentSchema = IntentBody.extend({ intent_id: z.string().min(1) })
+  .strict()
+  .superRefine(({ intent_id, ...body }, ctx) => {
+    const expected = sealedId(body);
+    if (intent_id !== expected) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: idMismatch("intent_id", intent_id, expected) });
+    }
+  });
+
+/**
+ * The outcome is in the hash, so one runner cannot publish two runs under one
+ * id with different results — `claimHash` in ../hivemark/src/claims.ts hashes
+ * the finding with the review that produced it for the same reason.
+ */
+export const RunRecordSchema = RunBody.extend({ run_id: z.string().min(1) })
+  .strict()
+  .superRefine(({ run_id, ...body }, ctx) => {
+    const expected = sealedId(body);
+    if (run_id !== expected) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: idMismatch("run_id", run_id, expected) });
+    }
+    const d = body.declared_not_verified;
+    const canonical = [...new Set(d)].sort();
+    if (d.join() !== canonical.join()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "declared_not_verified must be sorted and free of duplicates, so the same set always hashes the same",
+      });
+    }
+  });
+
+export type RunIntent = z.infer<typeof RunIntentSchema>;
+export type RunRecord = z.infer<typeof RunRecordSchema>;
+
+export function sealIntent(body: z.input<typeof IntentBody>): RunIntent {
+  const parsed = IntentBody.parse(body);
+  return RunIntentSchema.parse({ ...parsed, intent_id: sealedId(parsed) });
+}
+
+export function sealRun(body: z.input<typeof RunBody>): RunRecord {
+  const parsed = RunBody.parse(body);
+  return RunRecordSchema.parse({ ...parsed, run_id: sealedId(parsed) });
+}
+
+/** Over findings exactly as written; corpus.ts passes unknown keys through for this. */
+export const findingsDigest = (findings: readonly unknown[]): string => digest(canonicalJson(findings));
+
+function filesUnder(dir: string, prefix = ""): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) return filesUnder(join(dir, entry.name), rel);
+    if (entry.isFile()) return [rel];
+    throw new Error(
+      `${join(dir, entry.name)} is neither a file nor a directory; a graph artefact is refused rather than partly read`,
+    );
+  });
+}
+
+/**
+ * Digest of a graph artefact: a file by its bytes, a directory by its sorted
+ * relative paths and their contents. Modification times are never read, so the
+ * same graph copied to another machine digests the same.
+ */
+export function graphDigest(path: string): string {
+  const st = statSync(path);
+  if (st.isFile()) return digest(readFileSync(path));
+  if (!st.isDirectory()) throw new Error(`${path} is neither a file nor a directory`);
+  const files = filesUnder(path).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (files.length === 0) {
+    throw new Error(`graph artefact ${path} is empty; an empty ingest is a failed ingest, not a graph`);
+  }
+  return digest(files.map((rel) => `${rel}\u0000${digest(readFileSync(join(path, rel)))}`).join("\n"));
+}

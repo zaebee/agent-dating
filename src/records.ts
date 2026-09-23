@@ -19,7 +19,7 @@ export const CATEGORIES = ["logic", "contract", "tests", "types", "ontology", "s
 export type Category = (typeof CATEGORIES)[number];
 
 /** Present, non-empty, and the two failures are distinguishable. */
-const required = (field: string) =>
+export const required = (field: string) =>
   z
     .string({ required_error: `${field} is absent; it is required and has no default` })
     .refine((s) => s.trim().length > 0, {
@@ -27,10 +27,11 @@ const required = (field: string) =>
     });
 
 /** ISO-8601 with an explicit offset, validated as ../hivemark/src/schema.ts validates reviewed_at. */
-const timestamp = z
-  .string()
-  .refine((s) => /([+-]\d{2}:\d{2}|Z)$/.test(s), { message: "observed_at carries no UTC offset" })
-  .refine((s) => Number.isFinite(Date.parse(s)), { message: "observed_at is not a parseable timestamp" });
+export const timestampOf = (field: string) =>
+  z
+    .string()
+    .refine((s) => /([+-]\d{2}:\d{2}|Z)$/.test(s), { message: `${field} carries no UTC offset` })
+    .refine((s) => Number.isFinite(Date.parse(s)), { message: `${field} is not a parseable timestamp` });
 
 const rounded = (field: string) =>
   z.number().refine((n) => n === round4(n), { message: `${field} is not rounded to 4 decimals` });
@@ -39,7 +40,7 @@ const EnvelopeShape = {
   schema_version: z.literal(RECORD_SCHEMA_VERSION),
   subject: z.string().min(1),
   axis: z.string().min(1),
-  observed_at: timestamp,
+  observed_at: timestampOf("observed_at"),
   unestablished: required("unestablished"),
 };
 
