@@ -49,6 +49,16 @@ const ReviewSchema = z.object({
   findings: z.array(FindingSchema).default([]),
 });
 
+/**
+ * Unknown keys survive, and that is load-bearing.
+ *
+ * zod strips them by default, which would leave `pairReviews`'s classification
+ * pass looking only at fields this schema already names — so an unclassified
+ * field could never be seen, and invariant 2 would be decorative. The whole
+ * point of classifying is to catch a field nobody here has thought about.
+ */
+const ReviewRowSchema = ReviewSchema.passthrough();
+
 const JudgedSchema = z.object({
   url: z.string().min(1),
   project: z.string(),
@@ -69,7 +79,7 @@ const ManifestSchema = z.object({
 });
 
 export type Finding = z.infer<typeof FindingSchema>;
-export type ReviewRow = z.infer<typeof ReviewSchema>;
+export type ReviewRow = z.infer<typeof ReviewRowSchema>;
 export type JudgedRow = z.infer<typeof JudgedSchema>;
 export interface Manifest {
   readonly dir: string;
@@ -103,5 +113,5 @@ function rows<S extends z.ZodTypeAny>(m: Manifest, files: readonly string[], sch
   return out;
 }
 
-export const readReviews = (m: Manifest): ReviewRow[] => rows(m, m.reviews, ReviewSchema);
+export const readReviews = (m: Manifest): ReviewRow[] => rows(m, m.reviews, ReviewRowSchema);
 export const readJudged = (m: Manifest): JudgedRow[] => rows(m, m.judged, JudgedSchema);
