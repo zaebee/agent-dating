@@ -33,7 +33,8 @@ function flags(argv: readonly string[], required: readonly string[], optional: r
     if (!name.startsWith("--")) throw new Error(`expected a flag, got ${JSON.stringify(name)}`);
     const key = name.slice(2);
     if (!allowed.includes(key)) {
-      throw new Error(`unknown flag --${key}; this command takes ${allowed.map((a) => `--${a}`).join(" ")}`);
+      const accepted = allowed.map((a) => "--" + a).join(" ");
+      throw new Error(`unknown flag --${key}; this command takes ${accepted}`);
     }
     if (value === undefined || value.startsWith("--")) throw new Error(`--${key} needs a value`);
     if (out.has(key)) throw new Error(`--${key} given twice`);
