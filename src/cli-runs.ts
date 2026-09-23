@@ -18,13 +18,14 @@ const USAGE = [
   "  intent --runner --url --head --project --arm --conditions <file.json> --overlay",
   "  run    --intent --reviews <file.jsonl> --overlay",
   "  fail   --intent --failure <prepare|ingest|model-error|parse|timeout> --detail --overlay",
-  "  derive --runner --reviews <file.jsonl> --overlay",
+  "  derive (--runner <id> | --runs <run_id,run_id,...>) --reviews <file.jsonl> --overlay",
   "  joint  --sources <id,id,...> --reviews <file.jsonl> --overlay",
   "  audit  --overlay",
 ].join("\n");
 
-/** Every flag is required, none may repeat, and nothing is positional. */
-function flags(argv: readonly string[], allowed: readonly string[]): Map<string, string> {
+/** Flags in `required` must appear, `optional` may; none may repeat, and nothing is positional. */
+function flags(argv: readonly string[], required: readonly string[], optional: readonly string[] = []): Map<string, string> {
+  const allowed = [...required, ...optional];
   const out = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
     const name = argv[i] as string;
@@ -38,7 +39,7 @@ function flags(argv: readonly string[], allowed: readonly string[]): Map<string,
     if (out.has(key)) throw new Error(`--${key} given twice`);
     out.set(key, value);
   }
-  for (const a of allowed) if (!out.has(a)) throw new Error(`missing --${a}`);
+  for (const a of required) if (!out.has(a)) throw new Error(`missing --${a}`);
   return out;
 }
 
@@ -108,10 +109,32 @@ function commands(sub: string | undefined, rest: readonly string[]): number {
       return 0;
     }
     case "derive": {
-      const f = flags(rest, ["runner", "reviews", "overlay"]);
-      const own = runs(readOverlay(get(f, "overlay"))).filter((r) => r.runner === get(f, "runner"));
-      const set = pairRuns(own, reviewsAt(get(f, "reviews")), spec);
-      const d1 = deriveD1V2(set, spec, { metric: "uncertain_rate", direction: "lower-better", judgeId: "skeptic", observedAt: now() });
+      const f = flags(rest, ["reviews", "overlay"], ["runner", "runs"]);
+      const recs = readOverlay(get(f, "overlay"));
+      // Exactly one selector. After a legitimate re-run a runner has two completed
+      // runs of one task and arm, and pairRuns refuses to choose; --runs is how a
+      // person makes that choice explicitly instead of the tool making it silently.
+      if (f.has("runner") === f.has("runs")) throw new Error("derive takes exactly one of --runner or --runs");
+      let chosen: RunRecord[];
+      if (f.has("runs")) {
+        const byId = new Map(runs(recs).map((r) => [r.run_id, r]));
+        chosen = get(f, "runs")
+          .split(",")
+          .map((id) => {
+            const hit = byId.get(id);
+            if (!hit) throw new Error(`no run ${id} in ${get(f, "overlay")}`);
+            return hit;
+          });
+      } else {
+        chosen = runs(recs).filter((r) => r.runner === get(f, "runner"));
+      }
+      const set = pairRuns(chosen, reviewsAt(get(f, "reviews")), spec);
+      const d1 = deriveD1V2(
+        set,
+        spec,
+        { metric: "uncertain_rate", direction: "lower-better", judgeId: "skeptic", observedAt: now() },
+        intents(recs),
+      );
       if (!d1) throw new Error("no pair survived; nothing to record");
       appendOverlay(get(f, "overlay"), [d1]);
       process.stdout.write(

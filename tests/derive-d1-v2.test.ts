@@ -36,3 +36,22 @@ describe("deriveD1V2", () => {
     expect(d1?.unestablished).toContain(DECLARED_NOT_VERIFIED.join(", "));
   });
 });
+
+describe("deriveD1V2 and pre-registration", () => {
+  const set = pairRuns([g.run, a.run], rows, spec);
+
+  it("says how many of its runs had no announced intent", () => {
+    const d1 = deriveD1V2(set, spec, opts, [g.intent]);
+    expect(d1?.unestablished).toMatch(/1 of 2 paired run\(s\) had no announced intent/);
+  });
+
+  it("says how many differ from their announcement", () => {
+    const announcedElsewhere = { ...g.intent, runner: "mallory" };
+    const d1 = deriveD1V2(set, spec, opts, [announcedElsewhere, a.intent]);
+    expect(d1?.unestablished).toMatch(/1 differ from their announcement/);
+  });
+
+  it("says so when pre-registration was not checked at all", () => {
+    expect(deriveD1V2(set, spec, opts)?.unestablished).toMatch(/pre-registration not checked/);
+  });
+});
