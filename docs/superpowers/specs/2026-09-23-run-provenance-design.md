@@ -1,6 +1,6 @@
 # Run provenance — design
 
-**Status:** v1.1. Approved in brainstorming, amended by planning.
+**Status:** v1.2. Approved in brainstorming, amended by planning and by final review.
 
 **What changed in v1.1.** Planning found that §3's claim — supersession "works
 unchanged" — readmitted the mirror attack §5 defends against: a joint covering an
@@ -11,6 +11,16 @@ the joint-only fields sit in one block (§5). Three gaps were also closed: a joi
 in which no task was run by two contributors is refused (§5.1), an observation
 holds at most one completed run per task per arm (§6.1), and intents are
 announced after `prepare` and before `review` (§4.1).
+
+**What changed in v1.2.** Final review found that a joint trusted each source's
+stated pairs, so a published source with its arms swapped or its runner relabelled
+turned a recorded disagreement into agreement. A joint now re-derives every source
+from its own runs and refuses any difference (§5.1). The pre-registration check
+compared the wrong clock — `observed_at` is when a run was recorded, not when its
+review ran — so a review run before its announcement was accepted; the review's own
+`reviewed_at` is now checked (§6.2). `declared_not_verified` understated the
+unproven set and is widened (§4.5), and a derived observation now states how many
+of its runs were announced (§6.3).
 
 **Scope:** sub-project 3 of 4, narrowed. This specifies what a run must record so
 that a party other than the one who ran it can assemble the same inputs and run
@@ -198,6 +208,12 @@ conditions match except `graph_digest` did not run against the same graph, and
 pooled, and the divergence is recorded on the face of the joint observation,
 where a consumer decides what it is worth.
 
+**A joint re-derives every source from that source's own runs** and refuses any
+difference in contributors, pairs, metric, judge or admissibility. A source is a
+record anyone can publish; taken as written, one with its arms swapped would turn
+a disagreement into agreement. The same rule applies across sources: one runner
+may not contribute two completed runs of one task and arm to a joint.
+
 A joint in which **no task was run by more than one contributor is refused**. It
 re-runs nothing and so checks nothing, and `graph_agreement` over zero shared
 tasks would report "identical" about a comparison that never happened.
@@ -214,8 +230,11 @@ The runner reads `finder_model` and `skeptic_model` from environment variables.
 The record states which model answered and cannot prove it. Consumers must be
 able to **filter** on which conditions a given record leaves unproven, and prose
 does not filter. On the corpus as it stands the list is at least
-`["finder_model", "finder_provider", "skeptic_model", "skeptic_provider",
-"temperature"]`.
+`["finder_model", "finder_provider", "graph_digest", "profile", "skeptic_model",
+"skeptic_provider", "slice", "temperature"]`. `profile` is not on the review row;
+`graph_digest` is whatever the runner hashed, and nothing ties it to the graph the
+review saw; `slice` goes unchecked when a run covers `all`. A list that omits a
+condition implies a verification that never ran.
 
 `unestablished` is still required on every record, carrying what the record does
 not establish in the I-8 sense. The two are not redundant:
@@ -317,6 +336,14 @@ This is what intents are for. An `I` with no `R` citing it says someone declared
 a run and never published what it produced. Cherry-picking stops being
 invisible.
 
+**An announcement must precede the review, not merely the record.** `observed_at`
+on `R` is when the run was *recorded*, which is always after the announcement in
+any honest tool and so proves nothing. The review row carries `reviewed_at`, when
+the review actually ran, and a row reviewed before its intent was announced is
+refused at record time. `reviewed_at` is self-asserted by the producer, so this
+stops a tool from approving evidence that already shows the violation; it does not
+stop a producer who forges the timestamp.
+
 ### 6.3 The limit, stated plainly
 
 **Pre-registration has teeth only against a party who publishes intents.**
@@ -325,6 +352,12 @@ Someone who publishes none violates nothing — they are simply not participatin
 and their runs look like any other. The mechanism converts "quietly keeping the
 convenient runs" into "visibly not pre-registering", which is a signal a consumer
 can act on, not a guarantee.
+
+To make that signal reach a consumer, **a derived observation states it**: how many
+of its paired runs had no announced intent, and how many differ from their
+announcement — or, when no intents were supplied, that pre-registration was not
+checked. Without it, a pre-registered measurement and one assembled from runs kept
+after the fact would be indistinguishable in the record a consumer reads.
 
 There is no unilateral solution to this. There is only cost and visibility, and
 this document delivers visibility. It must be read the way §10 of the profile
