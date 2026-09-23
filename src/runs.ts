@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { canonicalJson } from "./canonical.js";
+import { byCodeUnit, canonicalJson } from "./canonical.js";
 import { required, timestampOf } from "./records.js";
 
 export const RUN_SCHEMA_VERSION = 2;
@@ -129,7 +129,7 @@ export const RunRecordSchema = RunBody.extend({ run_id: z.string().min(1) })
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: idMismatch("run_id", run_id, expected) });
     }
     const d = body.declared_not_verified;
-    const canonical = [...new Set(d)].sort();
+    const canonical = [...new Set(d)].sort(byCodeUnit);
     if (d.join() !== canonical.join()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -174,7 +174,7 @@ export function graphDigest(path: string): string {
   const st = statSync(path);
   if (st.isFile()) return digest(readFileSync(path));
   if (!st.isDirectory()) throw new Error(`${path} is neither a file nor a directory`);
-  const files = filesUnder(path).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const files = filesUnder(path).sort(byCodeUnit);
   if (files.length === 0) {
     throw new Error(`graph artefact ${path} is empty; an empty ingest is a failed ingest, not a graph`);
   }

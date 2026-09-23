@@ -1,4 +1,4 @@
-import { canonicalJson, observationId } from "./canonical.js";
+import { byCodeUnit, canonicalJson, observationId } from "./canonical.js";
 import type { ReviewRow } from "./corpus.js";
 import { measure } from "./derive-d1.js";
 import { deriveD1V2 } from "./derive-d1-v2.js";
@@ -32,7 +32,7 @@ function agreement(pairs: readonly RunPair[], shared: ReadonlySet<string>): Agre
   return [...perTask.values()].every((s) => s.size === 1) ? "identical" : "divergent";
 }
 
-const pairsOf = (d: D1V2): string[] => d.pairing.instances.map(([p, a]) => `${p}|${a}`).sort();
+const pairsOf = (d: D1V2): string[] => d.pairing.instances.map(([p, a]) => `${p}|${a}`).sort(byCodeUnit);
 
 /**
  * Re-derive a source from its own cited runs and refuse it if it states anything
@@ -112,7 +112,7 @@ export function buildJoint(input: JointInput): D1V2 {
       );
     }
   }
-  const contributors = [...new Set(sources.flatMap((s) => s.contributors))].sort();
+  const contributors = [...new Set(sources.flatMap((s) => s.contributors))].sort(byCodeUnit);
   if (contributors.length < 2) {
     throw new Error(
       `sources come from ${contributors.length} runner(s); a joint needs at least two distinct runners — one ` +
@@ -174,7 +174,7 @@ export function buildJoint(input: JointInput): D1V2 {
   for (const [k, ids] of completed) {
     if (ids.size > 1) {
       throw new Error(
-        `more than one completed run for ${k} across the sources (${[...ids].sort().join(", ")}); which to pool is a choice, and a choice here is where selection hides`,
+        `more than one completed run for ${k} across the sources (${[...ids].sort(byCodeUnit).join(", ")}); which to pool is a choice, and a choice here is where selection hides`,
       );
     }
   }
@@ -240,7 +240,7 @@ export function buildJoint(input: JointInput): D1V2 {
     inadmissible_because: m.because,
     contributors,
     joint: {
-      cites: [...new Set(sources.map((s) => observationId(s)))].sort(),
+      cites: [...new Set(sources.map((s) => observationId(s)))].sort(byCodeUnit),
       graph_agreement: agreement(pairs, shared),
       contested_tasks: contested,
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalJson, observationId, round4 } from "../src/canonical.js";
+import { byCodeUnit, canonicalJson, observationId, round4 } from "../src/canonical.js";
 
 describe("canonicalJson", () => {
   it("orders keys so the same record hashes the same", () => {
@@ -36,5 +36,21 @@ describe("observationId", () => {
 
   it("differs when a value differs", () => {
     expect(observationId({ a: 1 })).not.toBe(observationId({ a: 2 }));
+  });
+});
+
+describe("byCodeUnit", () => {
+  const xs = ["bob", "Alice", "alice", "Émile", "zoe", "_bot"];
+
+  it("orders by UTF-16 code unit, uppercase before underscore before lowercase", () => {
+    expect([...xs].sort(byCodeUnit)).toEqual(["Alice", "_bot", "alice", "bob", "zoe", "Émile"]);
+  });
+
+  it("differs from locale collation, which is the point — sorted arrays are hashed", () => {
+    expect([...xs].sort(byCodeUnit)).not.toEqual([...xs].sort((a, b) => a.localeCompare(b, "en")));
+  });
+
+  it("returns zero for equal strings", () => {
+    expect(byCodeUnit("a", "a")).toBe(0);
   });
 });

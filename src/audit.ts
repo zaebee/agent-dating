@@ -1,3 +1,4 @@
+import { byCodeUnit } from "./canonical.js";
 import { dischargeProblems } from "./record.js";
 import type { RunIntent, RunRecord } from "./runs.js";
 
@@ -11,8 +12,6 @@ export interface Audit {
   /** Run under conditions other than the announcement, or before it. */
   readonly mismatched: readonly { readonly run_id: string; readonly problems: readonly string[] }[];
 }
-
-const byString = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * Compare what was announced with what was run.
@@ -34,12 +33,12 @@ export function auditIntents(intents: readonly RunIntent[], runs: readonly RunRe
   return {
     unfulfilled: intents
       .filter((i) => !runsByIntent.has(i.intent_id))
-      .sort((a, b) => byString(a.intent_id, b.intent_id)),
-    orphans: runs.filter((r) => !intentsById.has(r.intent_id)).sort((a, b) => byString(a.run_id, b.run_id)),
+      .sort((a, b) => byCodeUnit(a.intent_id, b.intent_id)),
+    orphans: runs.filter((r) => !intentsById.has(r.intent_id)).sort((a, b) => byCodeUnit(a.run_id, b.run_id)),
     overdischarged: [...runsByIntent]
       .filter(([id, rs]) => intentsById.has(id) && rs.length > 1)
-      .map(([intent_id, rs]) => ({ intent_id, runs: rs.map((r) => r.run_id).sort(byString) }))
-      .sort((a, b) => byString(a.intent_id, b.intent_id)),
+      .map(([intent_id, rs]) => ({ intent_id, runs: rs.map((r) => r.run_id).sort(byCodeUnit) }))
+      .sort((a, b) => byCodeUnit(a.intent_id, b.intent_id)),
     mismatched: runs
       .flatMap((r) => {
         const intent = intentsById.get(r.intent_id);
@@ -47,7 +46,7 @@ export function auditIntents(intents: readonly RunIntent[], runs: readonly RunRe
         const problems = dischargeProblems(intent, r);
         return problems.length > 0 ? [{ run_id: r.run_id, problems }] : [];
       })
-      .sort((a, b) => byString(a.run_id, b.run_id)),
+      .sort((a, b) => byCodeUnit(a.run_id, b.run_id)),
   };
 }
 

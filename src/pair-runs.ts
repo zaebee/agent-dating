@@ -1,4 +1,4 @@
-import { canonicalJson } from "./canonical.js";
+import { byCodeUnit, canonicalJson } from "./canonical.js";
 import type { ReviewRow } from "./corpus.js";
 import type { AxisSpec } from "./registry.js";
 import { ConditionsSchema, findingsDigest, type Conditions, type RunRecord } from "./runs.js";
@@ -70,7 +70,7 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
   const first = runs[0];
   if (first === undefined) throw new Error("no runs to pair");
 
-  const runners = [...new Set(runs.map((r) => r.runner))].sort();
+  const runners = [...new Set(runs.map((r) => r.runner))].sort(byCodeUnit);
   if (runners.length > 1) {
     throw new Error(
       `runs from ${runners.length} runners (${runners.join(", ")}); one observation is one runner's, and ` +
@@ -125,7 +125,7 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
 
   const pairs: RunPair[] = [];
   let unpaired = 0;
-  for (const k of [...byTask.keys()].sort()) {
+  for (const k of [...byTask.keys()].sort(byCodeUnit)) {
     const slot = byTask.get(k);
     if (!slot?.present || !slot.absent) {
       unpaired += 1;
