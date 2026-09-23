@@ -1,0 +1,30 @@
+{
+  "context.graph": {
+    "resource_field": "arm",
+    "resources": ["graph", "ablated"],
+    "identifying": [
+      "url",
+      "head_sha",
+      "finder_model",
+      "skeptic_model",
+      "finder_provider",
+      "skeptic_provider",
+      "project",
+      "review_fingerprint"
+    ],
+    "incidental": [
+      "base_sha",
+      "guardian_sha",
+      "reviewed_at",
+      "pr_slice",
+      "had_graph",
+      "parse_failed",
+      "prompt_tokens",
+      "completion_tokens",
+      "duration_s",
+      "error",
+      "review_fingerprint_source",
+      "findings"
+    ]
+  }
+}
