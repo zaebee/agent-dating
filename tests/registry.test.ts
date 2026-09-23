@@ -49,6 +49,9 @@ describe("classify", () => {
   });
 
   it("throws on an unclassified field rather than guessing", () => {
-    expect(() => classify(spec, "temperature")).toThrow(/unclassified field "temperature"/);
+    // Not "temperature": that was this test's invented example until the corpus
+    // turned out to carry it, at 0.7 on 45 rows. It is registered as identifying
+    // now, and the example here has to be a field the producer really does not emit.
+    expect(() => classify(spec, "seed")).toThrow(/unclassified field "seed"/);
   });
 });
