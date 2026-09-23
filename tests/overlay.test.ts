@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -29,6 +29,12 @@ describe("overlay", () => {
 
   it("round-trips a record unchanged", () => {
     expect(readOverlay(path)[0]).toEqual(d3);
+  });
+
+  it("names the path and line when a line is not JSON at all", () => {
+    const broken = join(dir, "broken.jsonl");
+    writeFileSync(broken, "{not json\n", "utf8");
+    expect(() => readOverlay(broken)).toThrow(/broken\.jsonl:1 is not JSON/);
   });
 
   it("refuses a record that does not validate on read", () => {

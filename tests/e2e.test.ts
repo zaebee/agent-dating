@@ -38,3 +38,13 @@ describe("cli over the real corpus", () => {
     expect(records().filter((r) => r.kind === "D1" && r.admissible)).toHaveLength(0);
   });
 });
+
+describe("cli argument handling", () => {
+  it("refuses a flag where the manifest belongs, by name", () => {
+    expect(main(["--out", out, "corpus.json"])).toBe(2);
+  });
+
+  it("refuses a missing --out", () => {
+    expect(main(["corpus.json"])).toBe(2);
+  });
+});

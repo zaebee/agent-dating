@@ -18,7 +18,9 @@ export function deriveD2(rows: readonly ReviewRow[], axis: string, observedAt: s
   const bySubject = new Map<string, ReviewRow[]>();
   for (const row of rows) {
     const s = subjectOf(row);
-    bySubject.set(s, [...(bySubject.get(s) ?? []), row]);
+    const subjectRows = bySubject.get(s);
+    if (subjectRows) subjectRows.push(row);
+    else bySubject.set(s, [row]);
   }
 
   const out: D2[] = [];

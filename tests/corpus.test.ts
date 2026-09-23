@@ -15,6 +15,12 @@ describe("readReviews", () => {
   it("refuses a row without a url rather than skipping it", () => {
     expect(() => readReviews({ ...m, reviews: ["../malformed.jsonl"] })).toThrow();
   });
+
+  it("names the file and line when a line is not JSON at all", () => {
+    expect(() => readReviews({ ...m, reviews: ["../notjson.jsonl"] })).toThrow(
+      /\.\.\/notjson\.jsonl:1 is not JSON/,
+    );
+  });
 });
 
 describe("readJudged", () => {

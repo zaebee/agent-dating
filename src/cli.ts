@@ -12,6 +12,18 @@ export function main(argv: readonly string[]): number {
   const manifestPath = argv[0];
   const outIndex = argv.indexOf("--out");
   const out = outIndex >= 0 ? argv[outIndex + 1] : undefined;
+  // The manifest is positional and comes first. Accepting it in any position
+  // was suggested in review and is declined: this module refuses rather than
+  // repairs everywhere else, and silently accepting an order the usage line
+  // does not document is a repair. Refused by name, so the message says what is
+  // wrong instead of surfacing as ENOENT on a file called "--out".
+  if (manifestPath !== undefined && manifestPath.startsWith("-")) {
+    process.stderr.write(
+      `the manifest comes first: got ${JSON.stringify(manifestPath)}\n` +
+        "usage: bun src/cli.ts <manifest.json> --out <overlay.jsonl>\n",
+    );
+    return 2;
+  }
   if (!manifestPath || !out) {
     process.stderr.write("usage: bun src/cli.ts <manifest.json> --out <overlay.jsonl>\n");
     return 2;

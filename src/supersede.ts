@@ -20,7 +20,12 @@ export function supersededIds(records: readonly D1[]): Set<string> {
     [r.subject, r.axis, r.metric.name, r.judge.id, r.judge.goldens_version, r.schema_version].join("|");
 
   const groups = new Map<string, D1[]>();
-  for (const r of records) groups.set(group(r), [...(groups.get(group(r)) ?? []), r]);
+  for (const r of records) {
+    const g = group(r);
+    const members = groups.get(g);
+    if (members) members.push(r);
+    else groups.set(g, [r]);
+  }
 
   for (const members of groups.values()) {
     for (const a of members) {

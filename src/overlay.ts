@@ -20,7 +20,12 @@ export function readOverlay(path: string): Observation[] {
     .split("\n")
     .filter((l) => l.trim() !== "")
     .map((line, i) => {
-      const raw: unknown = JSON.parse(line);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch (err) {
+        throw new Error(`${path}:${i + 1} is not JSON: ${(err as Error).message}`);
+      }
       const kind = (raw as { kind?: unknown }).kind;
       const schema = kind === "D1" ? D1Schema : kind === "D2" ? D2Schema : kind === "D3" ? D3Schema : null;
       if (!schema) throw new Error(`${path}:${i + 1} unknown kind ${JSON.stringify(kind)}`);

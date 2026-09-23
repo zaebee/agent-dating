@@ -103,7 +103,16 @@ function rows<S extends z.ZodTypeAny>(m: Manifest, files: readonly string[], sch
     const text = readFileSync(path, "utf8");
     text.split("\n").forEach((line, i) => {
       if (line.trim() === "") return;
-      const parsed = schema.safeParse(JSON.parse(line));
+      let json: unknown;
+      try {
+        json = JSON.parse(line);
+      } catch (err) {
+        // Named, like every other refusal here. A bare SyntaxError says a file
+        // somewhere is malformed and not which line of which file, which is the
+        // one thing the reader of a five-file corpus needs.
+        throw new Error(`${file}:${i + 1} is not JSON: ${(err as Error).message}`);
+      }
+      const parsed = schema.safeParse(json);
       // Refused, never skipped. A skipped row is a silently smaller corpus, and
       // every number downstream is a fraction of something the reader cannot see.
       if (!parsed.success) throw new Error(`${file}:${i + 1} ${parsed.error.message}`);

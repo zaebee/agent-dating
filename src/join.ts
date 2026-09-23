@@ -34,7 +34,9 @@ export function joinJudged(judged: readonly JudgedRow[], reviews: readonly Revie
   const buckets = new Map<string, ReviewRow[]>();
   for (const r of reviews) {
     const k = `${r.url}|${r.had_graph}`;
-    buckets.set(k, [...(buckets.get(k) ?? []), r]);
+    const bucket = buckets.get(k);
+    if (bucket) bucket.push(r);
+    else buckets.set(k, [r]);
   }
 
   const joined: Joined[] = [];
