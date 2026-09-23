@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deriveD1V2 } from "../src/derive-d1-v2.js";
 import { pairRuns } from "../src/pair-runs.js";
 import { loadRegistry, requireAxis } from "../src/registry.js";
+import { DECLARED_NOT_VERIFIED } from "../src/runs.js";
 import { ablatedRow, graphRow, recorded, rows } from "./helpers/fixtures.js";
 
 const spec = requireAxis(loadRegistry("registry/axes.json"), "context.graph");
@@ -32,6 +33,6 @@ describe("deriveD1V2", () => {
   });
 
   it("names what the runner declared and nobody verified", () => {
-    expect(d1?.unestablished).toMatch(/finder_model, finder_provider, skeptic_model, skeptic_provider, temperature/);
+    expect(d1?.unestablished).toContain(DECLARED_NOT_VERIFIED.join(", "));
   });
 });

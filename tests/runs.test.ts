@@ -111,6 +111,19 @@ describe("sealRun", () => {
   });
 });
 
+describe("DECLARED_NOT_VERIFIED", () => {
+  it("names every condition nothing checks against the review row", () => {
+    // profile: the row does not record it. graph_digest: nothing ties the graph
+    // the runner hashed to the graph the review saw. slice: unchecked whenever
+    // the run covered "all". Listing too few implies verification that never ran.
+    expect([...DECLARED_NOT_VERIFIED]).toEqual(expect.arrayContaining(["graph_digest", "profile", "slice"]));
+  });
+
+  it("stays sorted, because it is hashed", () => {
+    expect([...DECLARED_NOT_VERIFIED]).toEqual([...DECLARED_NOT_VERIFIED].sort());
+  });
+});
+
 describe("findingsDigest", () => {
   it("ignores object key order", () => {
     expect(findingsDigest([{ a: 1, b: 2 }])).toBe(findingsDigest([{ b: 2, a: 1 }]));

@@ -35,15 +35,21 @@ export type Conditions = z.infer<typeof ConditionsSchema>;
 export type ConditionKey = keyof Conditions;
 
 /**
- * Stated by the runner and unprovable by the record: the models arrive through
- * environment variables, not flags. A list rather than prose, so a consumer can
- * filter on it. Sorted, because it is hashed.
+ * Stated by the runner and unprovable by the record. The models arrive through
+ * environment variables, not flags; `profile` is not on the review row at all;
+ * `graph_digest` is whatever the runner hashed, and nothing ties it to the graph
+ * the review saw; `slice` goes unchecked whenever the run covered "all". A list
+ * rather than prose, so a consumer can filter on it — and a list that omits a
+ * condition implies a verification that never ran. Sorted, because it is hashed.
  */
 export const DECLARED_NOT_VERIFIED: readonly ConditionKey[] = [
   "finder_model",
   "finder_provider",
+  "graph_digest",
+  "profile",
   "skeptic_model",
   "skeptic_provider",
+  "slice",
   "temperature",
 ];
 
