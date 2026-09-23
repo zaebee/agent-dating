@@ -101,6 +101,38 @@ describe("buildJoint", () => {
     ).toThrow(/axis "context.graph", not "review.skeptic"/);
   });
 
+  it("refuses a source whose pairs swap the arms", () => {
+    const [g, a] = alice.runs as [RunRecord, RunRecord];
+    const forged: D1V2 = { ...alice.obs, pairing: { ...alice.obs.pairing, instances: [[a.run_id, g.run_id]] } };
+    expect(() => joint({ ...alice, obs: forged }, bobDisagrees)).toThrow(/does not re-derive from its runs/);
+  });
+
+  it("refuses a source that pairs runs of two different tasks", () => {
+    const a2 = recorded("alice", { ...ablatedRow, head_sha: "h2" }).run;
+    const g = alice.runs[0] as RunRecord;
+    const forged: D1V2 = { ...alice.obs, pairing: { ...alice.obs.pairing, instances: [[g.run_id, a2.run_id]] } };
+    const part = { obs: forged, runs: [g, a2], rows: [graphRow, { ...ablatedRow, head_sha: "h2" }] };
+    expect(() => joint(part, bobAgrees)).toThrow(/does not re-derive from its runs/);
+  });
+
+  it("refuses a source labelled with a runner other than the one who ran it", () => {
+    const forged: D1V2 = { ...bobAgrees.obs, contributors: ["carol"] };
+    expect(() => joint(alice, { ...bobAgrees, obs: forged })).toThrow(/contributors/);
+  });
+
+  it("refuses a source whose stated metric its runs do not give", () => {
+    const forged: D1V2 = { ...alice.obs, metric: { ...alice.obs.metric, delta: 0.5 } };
+    expect(() => joint({ ...alice, obs: forged }, bobAgrees)).toThrow(/metric/);
+  });
+
+  it("refuses two completed runs of one task and arm by one runner across sources", () => {
+    const again = recorded("alice", ablatedRow, { at: "2026-08-12T12:00:00+00:00" });
+    const g = alice.runs[0] as RunRecord;
+    const second = deriveD1V2(pairRuns([g, again.run], [graphRow, ablatedRow], spec), spec, opts) as D1V2;
+    const part = { obs: second, runs: [g, again.run], rows: [graphRow, ablatedRow] };
+    expect(() => joint(alice, part, bobAgrees)).toThrow(/more than one completed run/);
+  });
+
   it("refuses a source whose runs were not supplied", () => {
     expect(() =>
       buildJoint({ sources: [alice.obs, bobAgrees.obs], runs: alice.runs, rows: alice.rows, spec, observedAt: at }),

@@ -1,7 +1,8 @@
 import { canonicalJson, observationId } from "./canonical.js";
 import type { ReviewRow } from "./corpus.js";
 import { measure } from "./derive-d1.js";
-import { configKey, rowFor, RUN_PAIR_KEY, taskKey, type RunPair } from "./pair-runs.js";
+import { deriveD1V2 } from "./derive-d1-v2.js";
+import { configKey, pairRuns, rowFor, RUN_PAIR_KEY, taskKey, type RunPair } from "./pair-runs.js";
 import { D1V2Schema, type D1V2 } from "./records.js";
 import type { AxisSpec } from "./registry.js";
 import type { RunRecord } from "./runs.js";
@@ -29,6 +30,60 @@ function agreement(pairs: readonly RunPair[], shared: ReadonlySet<string>): Agre
   const all = [...perTask.values()].flatMap((s) => [...s]);
   if (all.every((d) => d === null)) return "withheld-both";
   return [...perTask.values()].every((s) => s.size === 1) ? "identical" : "divergent";
+}
+
+const pairsOf = (d: D1V2): string[] => d.pairing.instances.map(([p, a]) => `${p}|${a}`).sort();
+
+/**
+ * Re-derive a source from its own cited runs and refuse it if it states anything
+ * else.
+ *
+ * A source is a record anyone can publish, and its schema cannot check its pairs
+ * against runs. Trusted as written, a supplier could swap the arms of one pair or
+ * relabel its runner and turn a recorded disagreement into agreement. Re-deriving
+ * with the same `pairRuns` and `deriveD1V2` that produced honest sources applies
+ * every rule they do — one runner, one configuration, arms where the registry says,
+ * the graph rule, one completed run per task per arm — and then compares.
+ */
+function verifySource(
+  source: D1V2,
+  byId: ReadonlyMap<string, RunRecord>,
+  rows: readonly ReviewRow[],
+  spec: AxisSpec,
+): void {
+  const id = observationId(source);
+  const cited = [...new Set(source.pairing.instances.flat())].map((runId) => {
+    const run = byId.get(runId);
+    if (!run) throw new Error(`run ${runId} is cited by a source and was not supplied`);
+    return run;
+  });
+  let again: D1V2 | null;
+  try {
+    again = deriveD1V2(pairRuns(cited, rows, spec), spec, {
+      metric: source.metric.name,
+      direction: source.metric.direction,
+      judgeId: source.judge.id,
+      observedAt: source.observed_at,
+    });
+  } catch (err) {
+    throw new Error(`source ${id} does not re-derive from its runs: ${(err as Error).message}`);
+  }
+  if (!again) throw new Error(`source ${id} does not re-derive from its runs: they pair into nothing`);
+  const differ = (label: string, stated: unknown, derived: unknown) => {
+    if (canonicalJson(stated) !== canonicalJson(derived)) {
+      throw new Error(
+        `source ${id} does not re-derive from its runs: ${label} states ${JSON.stringify(stated)}, its runs give ${JSON.stringify(derived)}`,
+      );
+    }
+  };
+  differ("contributors", source.contributors, again.contributors);
+  differ("pairing.instances", pairsOf(source), pairsOf(again));
+  differ("pairing.informative_pairs", source.pairing.informative_pairs, again.pairing.informative_pairs);
+  differ("subject", source.subject, again.subject);
+  differ("resource", source.resource, again.resource);
+  differ("metric", source.metric, again.metric);
+  differ("judge", source.judge, again.judge);
+  differ("admissible", source.admissible, again.admissible);
 }
 
 /**
@@ -85,6 +140,9 @@ export function buildJoint(input: JointInput): D1V2 {
   }
 
   const byId = new Map(runs.map((r) => [r.run_id, r]));
+  for (const s of new Map(sources.map((src) => [observationId(src), src])).values()) {
+    verifySource(s, byId, rows, spec);
+  }
   const seen = new Set<string>();
   const pairs: RunPair[] = [];
   for (const s of sources) {
@@ -98,6 +156,26 @@ export function buildJoint(input: JointInput): D1V2 {
         throw new Error(`run ${present ? absentId : presentId} is cited by a source and was not supplied`);
       }
       pairs.push({ present, absent, presentRow: rowFor(present, rows), absentRow: rowFor(absent, rows) });
+    }
+  }
+
+  // §6.1 across the pooled runs, not only within each source: one runner's two
+  // sources may each pair a different completed run of the same task and arm,
+  // and pooling both is the selection §6.1 refuses inside one observation.
+  const completed = new Map<string, Set<string>>();
+  for (const p of pairs) {
+    for (const r of [p.present, p.absent]) {
+      const k = `${r.runner} ${taskKey(r)} ${r.arm}`;
+      const ids = completed.get(k);
+      if (ids) ids.add(r.run_id);
+      else completed.set(k, new Set([r.run_id]));
+    }
+  }
+  for (const [k, ids] of completed) {
+    if (ids.size > 1) {
+      throw new Error(
+        `more than one completed run for ${k} across the sources (${[...ids].sort().join(", ")}); which to pool is a choice, and a choice here is where selection hides`,
+      );
     }
   }
 
