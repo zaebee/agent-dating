@@ -91,7 +91,10 @@ export function pairRuns(runs: readonly RunRecord[], rows: readonly ReviewRow[],
       throw new Error(`run ${r.run_id} is on arm ${r.arm}, which is neither ${present} nor ${absent}`);
     }
     const withheld = spec.graph_withheld_on;
-    if (withheld === undefined) continue;
+    // Completed runs only. A run that failed at `ingest` on the graph arm has no
+    // graph to digest, and it never pairs, so its digest reaches no measurement —
+    // refusing it would block recording the very failure §6.1 requires be kept.
+    if (withheld === undefined || !r.outcome.ok) continue;
     if (r.arm === withheld && r.conditions.graph_digest !== null) {
       throw new Error(`run ${r.run_id} is on the ${withheld} arm yet carries a graph_digest; that arm has no graph`);
     }

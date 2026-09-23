@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { pairRuns, rowFor } from "../src/pair-runs.js";
-import { failedRunFor } from "../src/record.js";
+import { failedRunFor, intentFor, type IntentInput } from "../src/record.js";
+import type { RunIntent } from "../src/runs.js";
+
+const inputOf = (i: RunIntent): IntentInput => ({
+  runner: i.runner,
+  task: i.task,
+  arm: i.arm,
+  conditions: i.conditions,
+  announcedAt: i.announced_at,
+});
 import { loadRegistry, requireAxis } from "../src/registry.js";
 import { sealRun } from "../src/runs.js";
 import { ablatedRow, graphRow, recorded, rows, withVerdict } from "./helpers/fixtures.js";
@@ -23,6 +32,14 @@ describe("pairRuns", () => {
     expect(set.pairs).toHaveLength(0);
     expect(set.failed).toBe(1);
     expect(set.unpaired).toBe(1);
+  });
+
+  it("counts a graph-arm run that failed at ingest, which has no graph to digest", () => {
+    const noGraph = intentFor({ ...inputOf(g.intent), conditions: { ...g.intent.conditions, graph_digest: null } });
+    const failed = failedRunFor(noGraph, "ingest", "graph build crashed", "2026-08-12T11:00:00+00:00");
+    const set = pairRuns([failed, a.run], rows, spec);
+    expect(set.failed).toBe(1);
+    expect(set.pairs).toHaveLength(0);
   });
 
   it("refuses runs from two runners", () => {
