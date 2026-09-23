@@ -18,6 +18,9 @@ undecidability is monolithic, which changes which metric this axis should be
 measured on. Both are fixed below, and the honest result is stated in §5.6:
 **this corpus supports no admissible D1 observation at all.**
 
+**What changed in v3.5.** Implementation found the corpus does not carry an
+empty-string `arm`: 45 rows have no `arm` field at all. Corrected in §5.2 step 3.
+
 **What changed in v3.** A second review round, mostly operational precision.
 `uncertain_rate` now has a written formula and an explicit per-pair-not-pooled
 rule (§5.1); sign normalisation is a derivation step rather than a property of a
@@ -369,9 +372,20 @@ so a deliberately ablated run and a plain diff-only run land in one identity;
 `breeding.md` acknowledges it ("a controlled removal and a plain diff-only run
 are one bee here") and is right to, because for a *track record* the question is
 how the review was performed. For deficit derivation it is fatal: the ablated
-arm is controlled and plain diff-only is confounded. The corpus carries three
-`arm` values — `"graph"`, `"ablated"`, and the empty string, which is "nobody
-planned this either way".
+arm is controlled and plain diff-only is confounded.
+
+The corpus carries two `arm` values — `"graph"` (51 rows) and `"ablated"` (19) —
+and **45 rows where the field is absent entirely**, which is "nobody planned
+this either way". Absent, not blank: no row carries an empty string. `arm` is
+therefore optional in the reader and is never defaulted, because `.default("")`
+would make an unplanned run indistinguishable from a planned one written blank.
+
+> v2 of this document said the corpus carried three values including the empty
+> string. It does not. That reading came from joining `undefined` into a string
+> during the measurement — the `?? ""` collapse this document cites
+> `../p-e/src/adapters/apex.ts` for, committed in the section that specifies
+> invariant 6. Recorded rather than deleted, for the reason §5.6 gives for the
+> other one.
 
 **Step 4 — normalise the sign.** The per-pair difference is computed as
 `with − without` and then multiplied by `−1` when `direction` is

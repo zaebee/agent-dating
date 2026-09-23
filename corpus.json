@@ -1,0 +1,15 @@
+{
+  "base": "../ownima/codegraph-brain/benchmarks",
+  "reviews": [
+    "martian-reviews.jsonl",
+    "martian-repeat-reviews.jsonl",
+    "martian-p3-run1.jsonl",
+    "martian-p3-run2.jsonl",
+    "martian-p3-run3.jsonl"
+  ],
+  "judged": [
+    "martian-judged.jsonl",
+    "martian-repeat-judged.jsonl",
+    "martian-p3-judged-run1.jsonl"
+  ]
+}
