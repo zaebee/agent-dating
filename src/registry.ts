@@ -13,6 +13,8 @@ const AxisSchema = z.object({
   resources: z.array(z.string().min(1)).min(2),
   identifying: z.array(z.string().min(1)).min(1),
   incidental: z.array(z.string()),
+  /** The arm that withholds the graph, whose runs carry no graph_digest. Absent: no graph rule on this axis. */
+  graph_withheld_on: z.string().min(1).optional(),
 });
 
 export interface AxisSpec {
@@ -21,6 +23,7 @@ export interface AxisSpec {
   readonly resources: readonly string[];
   readonly identifying: readonly string[];
   readonly incidental: readonly string[];
+  readonly graph_withheld_on?: string;
 }
 
 export type FieldClass = "identifying" | "resource" | "incidental";

@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "derive": "bun src/cli.ts"
+    "derive": "bun src/cli.ts",
+    "runs": "bun src/cli-runs.ts"
   },
   "license": "MIT",
   "dependencies": {

@@ -1,12 +1,28 @@
 import { createHash } from "node:crypto";
 
+/**
+ * Order strings by code unit, and never by locale.
+ *
+ * Mirrors `byCodeUnit` in ../hivemark/src/canonical.ts, for its reason. Several
+ * sorted arrays here are hashed — `contributors`, `cites`, `declared_not_verified`
+ * — and `localeCompare` would make their order depend on the ICU data a runtime
+ * carries: `alice` before `Alice`, `Émile` before `zoe`. Two machines could then
+ * seal the same record under different ids. Explicit rather than a bare `.sort()`,
+ * which orders the same way but reads as an accident.
+ */
+export function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 /** Deterministic JSON: object keys sorted, array order kept. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    .sort(([a], [b]) => byCodeUnit(a, b));
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 

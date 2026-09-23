@@ -2,6 +2,14 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
+/**
+ * Passthrough, so a finding read here is the finding as written.
+ *
+ * `findings_digest` on a run is recomputed by anyone holding the review line.
+ * A reader that stripped keys it did not recognise would digest something the
+ * producer never wrote, and two readers with different schemas would disagree
+ * about whether a run's findings changed.
+ */
 const FindingSchema = z.object({
   file: z.string(),
   line: z.number().int().nullable().optional(),
@@ -15,7 +23,7 @@ const FindingSchema = z.object({
   verdict: z.enum(["confirmed", "refuted", "uncertain"]).nullable().optional(),
   skeptic_note: z.string().nullable().optional(),
   impact_score: z.number().int().nullable().optional(),
-});
+}).passthrough();
 
 /**
  * `arm` is optional, and absence is a state rather than a missing value.
