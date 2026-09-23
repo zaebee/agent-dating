@@ -1,7 +1,7 @@
 # Deficit profile — design
 
-**Status:** v2. Approved in brainstorming, revised after external review, not
-implemented.
+**Status:** v3. Approved in brainstorming, revised after two rounds of external
+review, not implemented.
 **Scope:** sub-project 1 of 4. This specifies *the profile*, the rules that
 derive it, and the rules that decide whether a derived observation is
 admissible. It does not specify the matching engine's implementation, the run
@@ -12,11 +12,24 @@ Written in English to match the neighbouring repositories (`../hivemark`,
 
 **What changed in v2.** An external review found the noise criterion had been
 deferred to the wrong document. Checking that against the corpus found two
-larger problems the review had not: §5.2's published pair count was produced by
-a join weaker than §5.1 mandates, and the grounds data shows the corpus's
+larger problems the review had not: the published pair count was produced by a
+join weaker than §5.2 mandates, and the grounds data shows the corpus's
 undecidability is monolithic, which changes which metric this axis should be
-measured on. Both are fixed below, and the honest result is now stated in §5.6:
+measured on. Both are fixed below, and the honest result is stated in §5.6:
 **this corpus supports no admissible D1 observation at all.**
+
+**What changed in v3.** A second review round, mostly operational precision.
+`uncertain_rate` now has a written formula and an explicit per-pair-not-pooled
+rule (§5.1); sign normalisation is a derivation step rather than a property of a
+type (§5.2 step 4); invariant 2 became a mechanical field-classification check
+instead of a sentence a human must remember; supersession and the treatment of
+later-added pairs are specified (§5.7). Two items were declined with reasons —
+a leave-one-out stability gate, which gate 1 already implies, and a retention
+policy, which would delete the records a raised floor must re-evaluate. One
+claim of v2 was wrong and is corrected: `ontology` was cited as a category that
+never came up, and it came up five times and was ruled every time (§5.4). The
+floor of five in §5.5 is now labelled a convention rather than given a
+justification that did not hold.
 
 ---
 
@@ -137,9 +150,21 @@ interface D1 extends Envelope {
     /** Fields held equal. Mechanical distance-1 check. See 4.5, invariant 2. */
     key: string[];
     pairs: number;
-    /** Pairs whose delta is non-zero. Ties carry no directional evidence. */
+    /**
+     * Pairs whose difference is non-zero **after** the rounding of invariant 4.
+     * Ties carry no directional evidence, and a difference of 1e-5 is a tie:
+     * counting it would let float noise inflate the count gate 2 turns on.
+     */
     informative_pairs: number;
-    /** One entry per pair, `${url}@${head_sha}`. See 4.5, invariant 3. */
+    /**
+     * One entry per pair, `${url}@${head_sha}`. See 4.5, invariant 3.
+     *
+     * Not self-sufficient for replay: it omits `finder_model` and the arm
+     * labels, which live in `pairing.key` and `resource`. Replay takes the
+     * whole D1 record, never this list alone. Kept narrow deliberately — the
+     * list is one line per pair and repeating the key on each would invite the
+     * two to disagree.
+     */
     instances: string[];
   };
   metric: {
@@ -148,15 +173,26 @@ interface D1 extends Envelope {
     /** Rounded to 4 decimal places before storage. See 4.5, invariant 4. */
     with: number;
     without: number;
-    /** Signed so that positive always means "the resource helped". */
+    /**
+     * Normalised: positive always means the resource helped, whatever
+     * `direction` says. Derivation applies the sign (§5.2, step 5); nothing
+     * downstream re-applies it. `spread` is normalised the same way, so its
+     * endpoints are comparable with `delta` and gate 1 needs no special case.
+     */
     delta: number;
-    /** min..max of the per-pair difference. Required. */
+    /** min..max of the per-pair normalised difference. Required. */
     spread: [number, number];
   };
   judge: {
     id: string;
-    /** Version of the reference set the judge scored against. */
-    goldens_version: string;
+    /**
+     * Version of the reference set scored against, or null for a
+     * verdict-derived metric, which has no reference set. Null is a state, not
+     * a missing value: `uncertain_rate` is computed from the skeptic's own
+     * verdicts, so `id` names the skeptic and there are no goldens to version.
+     * A non-null value on a verdict-derived metric is refused.
+     */
+    goldens_version: string | null;
     /** true if the subject judged itself; the record then ranks as D3. */
     self: boolean;
   };
@@ -211,11 +247,26 @@ that does not repair it".
    model names, where a trailing space yields "two owner addresses, two track
    records, two birth attestations, for one reviewer".
 
-2. **`pairing.key` covers every field that varied.** Enumerated, not assumed. If
-   the key does not cover everything that varied, the observation is confounded,
-   and a confounded observation presented as a measurement is a lie. As a field
-   it can be checked; as a convention it rots. §5.2 is the worked case of it
-   rotting — inside this document, in v1.
+2. **Every field of a paired row is classified, and an unclassified field fails
+   the load.** Three classes, declared per axis in the registry:
+
+   - **identifying** — must be equal across the pair and must appear in
+     `pairing.key`;
+   - **the resource** — must differ across the pair, and differ exactly as
+     `resource.present` / `resource.absent` say;
+   - **incidental** — may differ and is ignored (`duration_s`,
+     `prompt_tokens`, `reviewed_at`, the findings themselves).
+
+   A field appearing in the rows and in none of the three classes **fails the
+   load**. This is `corpus.json`'s rule transposed from files to fields — "a
+   new file that appears in neither `include` nor `exclude` fails the load
+   rather than being silently ignored" — and it is what makes this invariant
+   mechanical rather than cultural. "The key covers everything that varied" is
+   a sentence a human must remember to check; "an unclassified field fails the
+   load" is a check that runs.
+
+   §5.6 records the worked case of the cultural version failing: it failed
+   inside this document, in v1, in the section that states the invariant.
 
 3. **`informative_pairs ≤ pairs` and `pairs == len(instances)`.** No
    truncation of `instances` is permitted; a reader must be able to recompute
@@ -227,11 +278,13 @@ that does not repair it".
    decisions (§5.5), and a gate that turns on the sixteenth bit of a float is
    not reproducible across readers.
 
-5. **Observations of different `schema_version` are never compared or pooled.**
-   A change to how `delta` or `key` is computed makes old records answer a
-   different question, and silently mixing them is the one error this design
-   cannot detect afterwards — the reason `genome.ts` gives for forking every
-   identity on a schema bump.
+5. **Observations of different `schema_version` are never compared or pooled**,
+   and the same holds for different `judge.goldens_version` on the same axis
+   and metric. A change to how `delta` or `key` is computed makes old records
+   answer a different question, and so does re-scoring against a revised
+   reference set; silently mixing either is the one error this design cannot
+   detect afterwards — the reason `genome.ts` gives for forking every identity
+   on a schema bump. Pairs scored against different goldens are not pairs.
 
 6. **`unestablished` is required, has no default, and absent ≠ empty.** Absent
    fails the build; empty is refused. This is I-8 (`../p-e/src/checks/i8.ts`)
@@ -272,7 +325,28 @@ Applied to `context.graph`, the metric is `uncertain_rate`, direction
 not the one this axis's evidence points at, and on this corpus it is
 unavailable anyway (§5.3).
 
-### 5.2 D1, in four steps
+**`uncertain_rate`, exactly.** Per review, over findings that carry a verdict:
+
+```
+ruled(r)           = { f ∈ r.findings : f.verdict ∈ {confirmed, refuted, uncertain} }
+uncertain_rate(r)  = |{ f ∈ ruled(r) : f.verdict = uncertain }| / |ruled(r)|
+```
+
+Findings with a null verdict are excluded from both numerator and denominator,
+because a null verdict means the skeptic did not rule and §5.4 forbids reading
+that as either an answer or an inability to answer. A review where
+`|ruled(r)| = 0` yields no rate and its pair is dropped with the drop recorded
+in `unestablished`.
+
+**The rate is computed per review and differenced per pair; it is never pooled
+then differenced.** Pooling first weights reviews by how many findings they
+happened to produce, and the arms differ sharply in exactly that — 14.1
+findings per review in the graph arm against 3.3 in the ablated one (§5.6) — so
+a pooled difference would be dominated by the arm that talks more. Gate 1 and
+gate 2 both operate on the per-pair differences, so this is not a presentation
+choice: pooling would change which observations are admissible.
+
+### 5.2 D1, in five steps
 
 **Step 1 — the metric comes from an independent judge, never from a raw finding
 count.** A raw count rewards verbosity. Where the metric is computed from
@@ -299,8 +373,19 @@ arm is controlled and plain diff-only is confounded. The corpus carries three
 `arm` values — `"graph"`, `"ablated"`, and the empty string, which is "nobody
 planned this either way".
 
-**Step 4 — emit one D1 per `(subject, axis, metric, judge)`**, carrying `pairs`,
-`informative_pairs` and `spread`, then evaluate §5.5.
+**Step 4 — normalise the sign.** The per-pair difference is computed as
+`with − without` and then multiplied by `−1` when `direction` is
+`lower-better`, so that a positive value always means the resource helped. The
+same multiplier is applied to both `spread` endpoints, which are then re-ordered
+so the pair stays `[min, max]`. This happens once, in derivation; no consumer
+re-applies `direction`, and none may.
+
+For `context.graph` / `uncertain_rate` this inverts the raw figure: a raw
+`graph − ablated` of `−0.2593` — the graph left less unruled — is stored as
+`delta: +0.2593`.
+
+**Step 5 — emit one D1 per `(subject, axis, metric, judge, goldens_version)`**,
+carrying `pairs`, `informative_pairs` and `spread`, then evaluate §5.5.
 
 ### 5.3 The join that must be refused, and what it costs
 
@@ -374,8 +459,26 @@ run without one.
 
 **A zero in a category is not the absence of a blind spot.** `ontology: 0` may
 mean "nothing was undecidable" or "the category never came up". These are
-different, and by invariant 6 every D2 must say in `unestablished` which one it
-is. Otherwise an untouched category reads as a strength.
+different, and an untouched category must never read as a strength.
+
+`unestablished` is per-observation and so cannot carry this on its own — a
+category that produced no findings produces no observation to carry anything.
+So a D2 is emitted **per `(subject, axis, category)` for every category the
+finding schema defines**, not only for those with undecidable findings, and
+`verdicts.total` distinguishes the two cases: `total = 0` is "never came up",
+`total > 0, undecidable = 0` is "came up, all ruled". Absence of a D2 for a
+defined category means the derivation did not run, and is refused at write time.
+
+Per category on this corpus, totals beside undecidables:
+
+```
+logic 672/49 · tests 91/12 · contract 90/13 · types 71/14 · ontology 5/0 · security 3/1
+```
+
+Both thin categories are the *second* case, not the first: `ontology` came up
+five times and was ruled every time. No category has `total = 0` here, so the
+"never came up" branch is specified and unexercised — stated because a reader
+checking these numbers will otherwise conclude the branch is dead code.
 
 ### 5.5 Admissibility
 
@@ -392,10 +495,27 @@ than a measurement. Non-parametric, computable, and requires no distributional
 assumption the corpus cannot support.
 
 **Gate 2 — `informative_pairs ≥ 5`.** Ties carry no directional evidence, so the
-count that matters excludes them. Five is a floor, not a statistic: below it a
-single reversed pair flips the direction of the majority, and an observation
-whose sign one rerun can invert is not evidence about a subject. The floor is
-revisable upward by the matching-engine spec and never downward.
+count that matters excludes them.
+
+**Five is a declared convention, not a derived threshold, and is labelled as
+such rather than dressed up.** An earlier draft justified it as the point below
+which "a single reversed pair flips the direction of the majority". That
+reasoning is wrong: the observation is a signed mean under gate 1, not a
+majority vote, and a reversed pair cannot occur at all once gate 1 holds. No
+honest statistical floor is available either, because deriving one needs a
+distributional assumption about per-pair differences that a corpus yielding two
+informative pairs cannot support. So the floor is a convention, chosen to be
+small enough that early axes can clear it and large enough that a handful of
+reruns is not a profile. It is revisable upward by the matching-engine spec and
+never downward, and §5.7 makes a raise re-evaluate stored observations rather
+than grandfather them.
+
+**Leave-one-out is not added, because gate 1 already implies it.** A stability
+test — does the sign survive dropping any one pair — was proposed in review.
+Under gate 1 every informative pair shares a sign, so dropping one leaves the
+sign intact whenever `informative_pairs ≥ 2`; at a floor of 5 the test can never
+fire. It would be a gate that rejects nothing, which is worse than no gate,
+because a reader would take it for protection.
 
 ### 5.6 What the corpus yields today
 
@@ -422,15 +542,22 @@ every key field:
 
 ```
 strict pairs                         6
-Δ uncertain_rate (graph − ablated)   mean −0.2593   spread [−1.000, 0.000]
+raw (graph − ablated)                mean −0.2593   spread [−1.000,  0.000]
+stored, sign-normalised (§5.2 step 4) delta +0.2593  spread [ 0.000, +1.000]
                                      graph better 2 · worse 0 · tied 4
 informative_pairs                    2
-
-unpaired, by arm:  graph 55/721 = 0.0763   ablated 11/63 = 0.1746
 ```
 
 Gate 1 passes: the spread does not span zero, and the graph never made things
 worse. Gate 2 fails: 2 informative pairs against a floor of 5.
+
+**The arm-level rates are confounded and are not evidence.** For completeness:
+55/721 = 0.0763 unruled in the graph arm against 11/63 = 0.1746 in the ablated
+one. The ratio is suggestive and must not be used. The two arms cover different
+URL sets, and the arms differ in findings per review by more than four times
+(14.1 against 3.3), which is the weighting problem §5.1 rejects pooling for.
+They are printed here because a reader who computes them independently should
+find them already accounted for, not because they support anything.
 
 **So the corpus supports no admissible D1 at all**, and the two candidates fail
 on different gates — which is the argument for having both. The profile for
@@ -441,6 +568,35 @@ informative pairs would settle it.
 That is the design working. A schema built around a single compatibility number
 would have published "+0.08 graph affinity", and it would have survived, because
 a number reads as settled when nothing beside it shows the width.
+
+### 5.7 Adding pairs later, and supersession
+
+Observations are immutable. Running more pairs on the same
+`(subject, axis, metric, judge, goldens_version)` **emits a new observation over
+the enlarged instance set; it never edits the old one**, and both are kept.
+
+An observation supersedes another when it covers a superset of its `instances`
+and is later. Supersession is **recomputed by any reader from the stored records
+alone** rather than written down as a flag, which is `../hivemark/src/supersede.ts`'s
+design and its reasoning transfers exactly:
+
+> Signing only the newest would bake one scoring policy into a permanent record
+> and make re-scoring under another impossible. Since the distinction is
+> recomputable by any reader, nothing is lost by publishing both and marking
+> which is which.
+
+Here the "scoring policy" is the gate-2 floor, which §5.5 says is revisable
+upward. A raise re-evaluates every stored observation, admissible and not — so
+an observation admitted under a floor of 5 can become inadmissible under 8, and
+that must be a recomputation over retained records, not a migration over records
+someone deleted because they were inadmissible at the time.
+
+This is also the answer to overlay growth, raised twice in review: **nothing is
+deleted, and that is load-bearing rather than lazy.** A retention policy that
+discarded inadmissible observations would delete precisely the records the
+exploration queue reads (§7.3) and precisely the records a raised floor must
+re-evaluate. The overlay grows at the rate of funded runs, which §7.6 makes
+expensive by construction.
 
 ## 6. Distance
 
@@ -463,6 +619,15 @@ reasoning, not new:
 Two values differ if they differ after the registry normalisation of invariant 1.
 Distance is the count of differing slots. A proposal changing a model *and*
 attaching a skeptic is distance 2.
+
+**A proposal that changes `context_mode` must be executed as an explicit
+`arm`.** The slot and the field are not the same thing: `context_mode` is
+derived from `had_graph` and is what the genome records, while `arm` is what the
+run was planned as, and §5.2 step 3 reads `arm` precisely because the two come
+apart. A run produced for a distance-1 proposal on this slot and left with the
+empty `arm` — "nobody planned this either way" — is unusable as the controlled
+side of a pair, whatever its `context_mode` says. The run harness must set the
+arm, and derivation must refuse the pair if it did not.
 
 ## 7. Ranking
 
@@ -492,6 +657,12 @@ restricted to observations with `admissible: true`.
   aggregation by the back door.
 - Candidates holding only D3 on that axis appear in a separate section labelled
   declared-not-measured, never interleaved.
+- Ties on `delta` break on `informative_pairs` descending, then `observed_at`
+  ascending, then `subject` bytewise. Three keys because the first two can both
+  tie, and an order that depends on which record a store happened to return
+  first is not reproducible — the same reason `../hivemark/src/ablation.ts`
+  refuses an arbitrary pick among reruns, "an arbitrary pick would make a
+  published number depend on the order the file happened to be read in".
 
 ### 7.3 Exploration queue
 
@@ -530,6 +701,14 @@ by a party that is not the subject. Comparison of the prose in `grounds` is
 there is nothing yet to separate. When a second ground is observed, this section
 gains a taxonomy; until then a similarity threshold would be a parameter fitted
 to a single point.
+
+**This rule is currently weak, and that is a property of the evidence, not a
+reading of the text.** Every D2 the corpus yields is `more-evidence`, so the
+filter admits any supplier claiming to bring evidence and excludes almost
+nobody. It is written as a rule because it is the rule, but it must not be
+cited as a validated mechanism: nothing here has exercised it. The first
+observed `independent-party` ground is what turns it from a stated rule into a
+tested one.
 
 ### 7.5 Absent by construction
 
@@ -591,6 +770,12 @@ within it. A cross-axis query is not forbidden — it is inexpressible, so
 `global_score` cannot be written without first changing the signature, which is
 a reviewable act.
 
+The limit of that enforcement, stated so nobody mistakes it for a guarantee: a
+client can call the function twice and merge the two orders itself. Nothing here
+prevents that, and nothing could. What the signature buys is that the merge must
+be written by someone, in their own code, rather than obtained by calling an API
+that offers it — the difference between a deliberate act and a default.
+
 ## 10. Out of scope
 
 Named so the boundary is explicit; each is its own spec and its own cycle:
@@ -598,10 +783,20 @@ Named so the boundary is explicit; each is its own spec and its own cycle:
 1. **Matching engine** — the implementation of §7, its storage, its query path,
    the exact form of `novelty`, and any raising of the §5.5 gate-2 floor.
 2. **Run harness** — executing an authorised proposal and writing the result
-   back, including what a failed or poisoned run produces. Adversarial ablation
-   — a supplier deliberately degrading the withheld arm — is a run-harness
-   concern and is not addressed here; §5.5's gates limit the damage but do not
-   detect intent.
+   back, including what a failed or poisoned run produces, and setting the
+   `arm` a distance-1 proposal on `context_mode` requires (§6).
+
+   **Admissible does not imply honest, and this document cannot make it so.**
+   Adversarial ablation — a supplier who systematically degrades the withheld
+   arm — manufactures observations that pass both gates of §5.5 once enough
+   pairs accumulate, because the gates test whether evidence is self-consistent,
+   never whether it was produced in good faith. Gate 1 in particular is
+   *easier* to pass for a manipulated arm than an honest one, since consistent
+   degradation never crosses zero. The defence is not a gate; it is that the
+   supplier does not judge (`judge.self`), that instances are recomputable by
+   anyone (invariant 3), and that runs cost money (§7.6). Making that defence
+   actual is the run-harness and market specs' problem, and it should be taken
+   up early rather than after the first funded axis.
 3. **Market** — payment, escrow, dispute and swipe semantics, over `../aura`'s
    `NegotiationService` (`Negotiate`, `OfferAccepted`/`Countered`/`Rejected`,
    `CryptoPaymentInstructions`, `dispute_token`).
