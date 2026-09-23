@@ -1,6 +1,6 @@
 import { byCodeUnit, canonicalJson, observationId } from "./canonical.js";
 import type { ReviewRow } from "./corpus.js";
-import { measure } from "./derive-d1.js";
+import { measure, type Measured } from "./derive-d1.js";
 import { deriveD1V2 } from "./derive-d1-v2.js";
 import { configKey, pairRuns, rowFor, RUN_PAIR_KEY, taskKey, type RunPair } from "./pair-runs.js";
 import { D1V2Schema, type D1V2 } from "./records.js";
@@ -17,15 +17,20 @@ export interface JointInput {
 
 type Agreement = "identical" | "divergent" | "withheld-both";
 
+/** Add `value` to the set stored under `key`, creating the set on first use. */
+function addTo<K, V>(map: Map<K, Set<V>>, key: K, value: V): void {
+  const set = map.get(key);
+  if (set) set.add(value);
+  else map.set(key, new Set([value]));
+}
+
 /** Whether the contributors who ran the same task saw the same graph. */
 function agreement(pairs: readonly RunPair[], shared: ReadonlySet<string>): Agreement {
   const perTask = new Map<string, Set<string | null>>();
   for (const p of pairs) {
     const k = taskKey(p.present);
     if (!shared.has(k)) continue;
-    const digests = perTask.get(k);
-    if (digests) digests.add(p.present.conditions.graph_digest);
-    else perTask.set(k, new Set([p.present.conditions.graph_digest]));
+    addTo(perTask, k, p.present.conditions.graph_digest);
   }
   const all = [...perTask.values()].flatMap((s) => [...s]);
   if (all.every((d) => d === null)) return "withheld-both";
@@ -86,31 +91,22 @@ function verifySource(
   differ("admissible", source.admissible, again.admissible);
 }
 
-/**
- * Pool single-runner observations into one, explicitly.
- *
- * Nothing pools automatically: if foreign pairs merged by themselves, anyone
- * could suppress an honest observation by fabricating opposite-signed pairs.
- * Here the sources stand untouched and a dispute becomes a third record.
- *
- * Tasks are not averaged. A supplier's +1 and a verifier's -1 on one task
- * average to a tie, which would lower informative_pairs instead of tripping
- * gate 1 — deleting the disagreement this record exists to show. A task run by
- * more contributors therefore weighs more, which the profile spec's §5.1 would
- * forbid for a magnitude and which does not obstruct detecting disagreement.
- */
-export function buildJoint(input: JointInput): D1V2 {
-  const { sources, runs, rows, spec, observedAt } = input;
+function sameOrThrow(label: string, a: unknown, b: unknown): void {
+  if (canonicalJson(a) !== canonicalJson(b)) {
+    throw new Error(`sources disagree on ${label}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
+  }
+}
+
+/** Refuse sources that cannot be pooled at all, before any run is read. */
+function checkSources(sources: readonly D1V2[], spec: AxisSpec): { first: D1V2; contributors: string[] } {
   const first = sources[0];
   if (first === undefined || sources.length < 2) throw new Error("a joint needs at least two sources");
-
-  for (const s of sources) {
-    if (s.joint) {
-      throw new Error(
-        `source ${observationId(s)} is itself a joint; joints are built from single-runner observations so ` +
-          `no run is weighted twice by nesting`,
-      );
-    }
+  const nested = sources.find((s) => s.joint);
+  if (nested) {
+    throw new Error(
+      `source ${observationId(nested)} is itself a joint; joints are built from single-runner observations so ` +
+        `no run is weighted twice by nesting`,
+    );
   }
   const contributors = [...new Set(sources.flatMap((s) => s.contributors))].sort(byCodeUnit);
   if (contributors.length < 2) {
@@ -126,88 +122,111 @@ export function buildJoint(input: JointInput): D1V2 {
     );
   }
   for (const s of sources) {
-    const same = (label: string, a: unknown, b: unknown) => {
-      if (canonicalJson(a) !== canonicalJson(b)) {
-        throw new Error(`sources disagree on ${label}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
-      }
-    };
-    same("subject", first.subject, s.subject);
-    same("axis", first.axis, s.axis);
-    same("resource", first.resource, s.resource);
-    same("metric.name", first.metric.name, s.metric.name);
-    same("metric.direction", first.metric.direction, s.metric.direction);
-    same("judge", first.judge, s.judge);
+    sameOrThrow("subject", first.subject, s.subject);
+    sameOrThrow("axis", first.axis, s.axis);
+    sameOrThrow("resource", first.resource, s.resource);
+    sameOrThrow("metric.name", first.metric.name, s.metric.name);
+    sameOrThrow("metric.direction", first.metric.direction, s.metric.direction);
+    sameOrThrow("judge", first.judge, s.judge);
   }
+  return { first, contributors };
+}
+
+/** Every distinct run pair the sources cite, each counted once, with its rows. */
+function collectPairs(
+  sources: readonly D1V2[],
+  byId: ReadonlyMap<string, RunRecord>,
+  rows: readonly ReviewRow[],
+): RunPair[] {
+  const seen = new Set<string>();
+  const pairs: RunPair[] = [];
+  for (const [presentId, absentId] of sources.flatMap((s) => s.pairing.instances)) {
+    const key = `${presentId}|${absentId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const present = byId.get(presentId);
+    const absent = byId.get(absentId);
+    if (!present || !absent) {
+      throw new Error(`run ${present ? absentId : presentId} is cited by a source and was not supplied`);
+    }
+    pairs.push({ present, absent, presentRow: rowFor(present, rows), absentRow: rowFor(absent, rows) });
+  }
+  return pairs;
+}
+
+/**
+ * §6.1 across the pooled runs, not only within each source: one runner's two
+ * sources may each pair a different completed run of the same task and arm, and
+ * pooling both is the selection §6.1 refuses inside one observation.
+ */
+function refuseRepeatedRuns(pairs: readonly RunPair[]): void {
+  const completed = new Map<string, Set<string>>();
+  for (const r of pairs.flatMap((p) => [p.present, p.absent])) {
+    addTo(completed, `${r.runner} ${taskKey(r)} ${r.arm}`, r.run_id);
+  }
+  for (const [k, ids] of completed) {
+    if (ids.size > 1) {
+      const listed = [...ids].sort(byCodeUnit).join(", ");
+      throw new Error(
+        `more than one completed run for ${k} across the sources (${listed}); which to pool is a choice, and a choice here is where selection hides`,
+      );
+    }
+  }
+}
+
+function refuseMixedConfigs(pairs: readonly RunPair[]): void {
+  const configs = new Set(pairs.flatMap((p) => [configKey(p.present.conditions), configKey(p.absent.conditions)]));
+  if (configs.size > 1) {
+    throw new Error(`cited runs span ${configs.size} configurations; only graph_digest may differ between pooled runs`);
+  }
+}
+
+/** Tasks run by more than one contributor; refused when there are none. */
+function sharedTasks(pairs: readonly RunPair[]): Set<string> {
+  const runnersByTask = new Map<string, Set<string>>();
+  for (const p of pairs) addTo(runnersByTask, taskKey(p.present), p.present.runner);
+  const shared = new Set([...runnersByTask].filter(([, rs]) => rs.size > 1).map(([k]) => k));
+  if (shared.size === 0) {
+    throw new Error("no task was run by more than one contributor; a joint that re-runs nothing checks nothing");
+  }
+  return shared;
+}
+
+/** Tasks on which one run found the resource helped and another that it hurt. */
+function contestedTasks(kept: readonly Measured<RunPair>[]): number {
+  const signs = new Map<string, Set<number>>();
+  for (const k of kept) addTo(signs, taskKey(k.pair.present), Math.sign(k.diff));
+  return [...signs.values()].filter((s) => s.has(1) && s.has(-1)).length;
+}
+
+/**
+ * Pool single-runner observations into one, explicitly.
+ *
+ * Nothing pools automatically: if foreign pairs merged by themselves, anyone
+ * could suppress an honest observation by fabricating opposite-signed pairs.
+ * Here the sources stand untouched and a dispute becomes a third record.
+ *
+ * Tasks are not averaged. A supplier's +1 and a verifier's -1 on one task
+ * average to a tie, which would lower informative_pairs instead of tripping
+ * gate 1 — deleting the disagreement this record exists to show. A task run by
+ * more contributors therefore weighs more, which the profile spec's §5.1 would
+ * forbid for a magnitude and which does not obstruct detecting disagreement.
+ */
+export function buildJoint(input: JointInput): D1V2 {
+  const { sources, runs, rows, spec, observedAt } = input;
+  const { first, contributors } = checkSources(sources, spec);
 
   const byId = new Map(runs.map((r) => [r.run_id, r]));
   for (const s of new Map(sources.map((src) => [observationId(src), src])).values()) {
     verifySource(s, byId, rows, spec);
   }
-  const seen = new Set<string>();
-  const pairs: RunPair[] = [];
-  for (const s of sources) {
-    for (const [presentId, absentId] of s.pairing.instances) {
-      const key = `${presentId}|${absentId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const present = byId.get(presentId);
-      const absent = byId.get(absentId);
-      if (!present || !absent) {
-        throw new Error(`run ${present ? absentId : presentId} is cited by a source and was not supplied`);
-      }
-      pairs.push({ present, absent, presentRow: rowFor(present, rows), absentRow: rowFor(absent, rows) });
-    }
-  }
-
-  // §6.1 across the pooled runs, not only within each source: one runner's two
-  // sources may each pair a different completed run of the same task and arm,
-  // and pooling both is the selection §6.1 refuses inside one observation.
-  const completed = new Map<string, Set<string>>();
-  for (const p of pairs) {
-    for (const r of [p.present, p.absent]) {
-      const k = `${r.runner} ${taskKey(r)} ${r.arm}`;
-      const ids = completed.get(k);
-      if (ids) ids.add(r.run_id);
-      else completed.set(k, new Set([r.run_id]));
-    }
-  }
-  for (const [k, ids] of completed) {
-    if (ids.size > 1) {
-      throw new Error(
-        `more than one completed run for ${k} across the sources (${[...ids].sort(byCodeUnit).join(", ")}); which to pool is a choice, and a choice here is where selection hides`,
-      );
-    }
-  }
-
-  const configs = new Set(pairs.flatMap((p) => [configKey(p.present.conditions), configKey(p.absent.conditions)]));
-  if (configs.size > 1) {
-    throw new Error(`cited runs span ${configs.size} configurations; only graph_digest may differ between pooled runs`);
-  }
-
-  const runnersByTask = new Map<string, Set<string>>();
-  for (const p of pairs) {
-    const k = taskKey(p.present);
-    const set = runnersByTask.get(k);
-    if (set) set.add(p.present.runner);
-    else runnersByTask.set(k, new Set([p.present.runner]));
-  }
-  const shared = new Set([...runnersByTask].filter(([, rs]) => rs.size > 1).map(([k]) => k));
-  if (shared.size === 0) {
-    throw new Error("no task was run by more than one contributor; a joint that re-runs nothing checks nothing");
-  }
+  const pairs = collectPairs(sources, byId, rows);
+  refuseRepeatedRuns(pairs);
+  refuseMixedConfigs(pairs);
+  const shared = sharedTasks(pairs);
 
   const m = measure(pairs, (p: RunPair) => ({ present: p.presentRow, absent: p.absentRow }), first.metric.name, first.metric.direction);
   if (!m) throw new Error("no pair in the joint has a defined metric");
-
-  const signs = new Map<string, { pos: boolean; neg: boolean }>();
-  for (const k of m.kept) {
-    const t = taskKey(k.pair.present);
-    const s = signs.get(t) ?? { pos: false, neg: false };
-    if (k.diff > 0) s.pos = true;
-    if (k.diff < 0) s.neg = true;
-    signs.set(t, s);
-  }
-  const contested = [...signs.values()].filter((s) => s.pos && s.neg).length;
 
   return D1V2Schema.parse({
     schema_version: 2,
@@ -242,7 +261,7 @@ export function buildJoint(input: JointInput): D1V2 {
     joint: {
       cites: [...new Set(sources.map((s) => observationId(s)))].sort(byCodeUnit),
       graph_agreement: agreement(pairs, shared),
-      contested_tasks: contested,
+      contested_tasks: contestedTasks(m.kept),
     },
   });
 }
