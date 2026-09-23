@@ -1,0 +1,61 @@
+{
+  "experiment": "context-graph-v2",
+  "fixed_at": "2026-09-23T22:57:53.892Z",
+  "plan": {
+    "path": "ownima/codegraph-brain/benchmarks/martian-plan.json",
+    "sha256": "859d172d2d5f7590f0e881155559527d35de06f0a5242f0685f719a4cfc737a3"
+  },
+  "rule": "reproducible graph-slice PRs of the plan, without fetch_error, sorted by url (code unit); mulberry32 seed 20260923 Fisher-Yates shuffle; first 15; re-sorted by url",
+  "population_size": 19,
+  "population": [
+    "https://github.com/calcom/cal.com/pull/10600",
+    "https://github.com/calcom/cal.com/pull/10967",
+    "https://github.com/calcom/cal.com/pull/11059",
+    "https://github.com/calcom/cal.com/pull/14740",
+    "https://github.com/calcom/cal.com/pull/14943",
+    "https://github.com/calcom/cal.com/pull/22345",
+    "https://github.com/calcom/cal.com/pull/22532",
+    "https://github.com/calcom/cal.com/pull/7232",
+    "https://github.com/calcom/cal.com/pull/8087",
+    "https://github.com/calcom/cal.com/pull/8330",
+    "https://github.com/getsentry/sentry/pull/67876",
+    "https://github.com/getsentry/sentry/pull/77754",
+    "https://github.com/getsentry/sentry/pull/80168",
+    "https://github.com/getsentry/sentry/pull/80528",
+    "https://github.com/getsentry/sentry/pull/93824",
+    "https://github.com/getsentry/sentry/pull/95633",
+    "https://github.com/grafana/grafana/pull/106778",
+    "https://github.com/grafana/grafana/pull/107534",
+    "https://github.com/grafana/grafana/pull/79265"
+  ],
+  "selected": [
+    "https://github.com/calcom/cal.com/pull/10967",
+    "https://github.com/calcom/cal.com/pull/11059",
+    "https://github.com/calcom/cal.com/pull/14740",
+    "https://github.com/calcom/cal.com/pull/22345",
+    "https://github.com/calcom/cal.com/pull/22532",
+    "https://github.com/calcom/cal.com/pull/7232",
+    "https://github.com/calcom/cal.com/pull/8087",
+    "https://github.com/calcom/cal.com/pull/8330",
+    "https://github.com/getsentry/sentry/pull/67876",
+    "https://github.com/getsentry/sentry/pull/80528",
+    "https://github.com/getsentry/sentry/pull/93824",
+    "https://github.com/getsentry/sentry/pull/95633",
+    "https://github.com/grafana/grafana/pull/106778",
+    "https://github.com/grafana/grafana/pull/107534",
+    "https://github.com/grafana/grafana/pull/79265"
+  ],
+  "subject": {
+    "finder_model": "gemini-2.5-flash",
+    "finder_provider": "gemini",
+    "skeptic_model": "gemini-3.5-flash",
+    "skeptic_provider": "gemini",
+    "slice": "graph",
+    "profile": "core",
+    "arms": [
+      "graph",
+      "ablated"
+    ]
+  },
+  "guardian_sha_at_selection": "ad35a685a4428509569c778fc9ecfa66ffda9d7d"
+}
