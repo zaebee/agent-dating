@@ -1,2 +1,5 @@
 node_modules
 overlay*.jsonl
+.env
+.env.*
+!.env.example
