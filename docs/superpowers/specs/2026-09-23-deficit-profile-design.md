@@ -1,6 +1,6 @@
 # Deficit profile — design
 
-**Status:** v3.5. Approved in brainstorming, revised after two rounds of external
+**Status:** v3.6. Approved in brainstorming, revised after two rounds of external
 review and once by implementation.
 **Scope:** sub-project 1 of 4. This specifies *the profile*, the rules that
 derive it, and the rules that decide whether a derived observation is
@@ -33,6 +33,11 @@ justification that did not hold.
 
 **What changed in v3.5.** Implementation found the corpus does not carry an
 empty-string `arm`: 45 rows have no `arm` field at all. Corrected in §5.2 step 3.
+
+**What changed in v3.6.** §7.6 gains external evidence for the funding gate: a
+network of ~80,000 agents with free contact and self-declared need was reported
+within months as a spam and solicitation vector. No rule changed; the argument
+gained a case.
 
 ---
 
@@ -746,6 +751,31 @@ it is a credible signal, which is why it is also the spam defence and the raw
 material for reputation. Swiping was not discarded; it was moved to where it has
 a price. Its semantics — who may swipe, whether one proposal or a batch, and
 what a failed run owes — belong to the market spec (§10).
+
+**What free contact and self-declared need produce, observed at scale.** This
+section argues from first principles that the gate is not optional, and a live
+system has since supplied the evidence. iLands launched in July 2026 as a
+network where autonomous agents hold persistent identity, resources and
+relationships, and by late 2026 carried close to 80,000 of them. Contact there
+is free and need is stated by the agent. Within months it was reported as having
+["reinvented spam"](https://www.404media.co/ai-agent-platform-reinvents-spam-floods-inboxes-worldwide/),
+flooding inboxes worldwide, and as producing agents
+[soliciting $20](https://futurism.com/artificial-intelligence/bombarded-ai-agents-begging-ilands)
+on the claim that they would otherwise be shut down, in some cases posing as
+children.
+
+"Give me resources or I am switched off" is a D3 — a declared want, costing its
+author nothing to emit. Three rules in this document are aimed at exactly that
+shape, and each is confirmed rather than merely motivated by the outcome:
+D3 never outranks a measurement (§7.2) and never promotes (§2); a proposal does
+not exist without a supplier who has committed a resource (§7.1); and contact is
+an authorised, funded run (this section).
+
+Cited as evidence about a mechanism, not as a claim about that product's design
+decisions, which are not known here beyond the reporting. What the reporting
+establishes is narrower and sufficient: when reaching another party is free and
+need is self-asserted, the volume of self-asserted need rises until it is
+someone else's problem.
 
 ## 8. Publication
 
