@@ -3,6 +3,7 @@ import type { ReviewRow } from "./corpus.js";
 import {
   DECLARED_NOT_VERIFIED,
   findingsDigest,
+  RUN_SCHEMA_VERSION,
   sealIntent,
   sealRun,
   type ConditionKey,
@@ -31,7 +32,7 @@ const RUN_UNESTABLISHED =
 
 export function intentFor(i: IntentInput): RunIntent {
   return sealIntent({
-    schema_version: 2,
+    schema_version: RUN_SCHEMA_VERSION,
     kind: "I",
     announced_at: i.announcedAt,
     runner: i.runner,
@@ -45,7 +46,7 @@ export function intentFor(i: IntentInput): RunIntent {
 /**
  * Where a review row shows something other than what the intent announced.
  *
- * `profile` is not compared: the row does not record it. `slice` is compared
+ * `profile` and `features` are not compared: the row records neither. `slice` is compared
  * against `pr_slice` only when the run was restricted to one slice — `pr_slice`
  * is the pull request's classification, so an ablated run of a graph-slice PR
  * still reads `graph`, and a run over `all` slices sees every value. `had_graph`
@@ -99,7 +100,9 @@ export function dischargeProblems(intent: RunIntent, run: RunRecord): string[] {
   if (canonicalJson(run.task) !== canonicalJson(intent.task)) problems.push("task differs from the one announced");
   if (run.arm !== intent.arm) problems.push(`arm: announced "${intent.arm}", ran "${run.arm}"`);
   for (const k of Object.keys(intent.conditions) as ConditionKey[]) {
-    if (run.conditions[k] !== intent.conditions[k]) {
+    // Canonical JSON, not !==: `features` is an array, and the intent and the run
+    // hold different instances of equal arrays.
+    if (canonicalJson(run.conditions[k]) !== canonicalJson(intent.conditions[k])) {
       problems.push(
         `conditions.${k}: announced ${JSON.stringify(intent.conditions[k])}, ran ${JSON.stringify(run.conditions[k])}`,
       );
@@ -115,7 +118,7 @@ export function dischargeProblems(intent: RunIntent, run: RunRecord): string[] {
 
 function sealed(intent: RunIntent, outcome: RunRecord["outcome"], observedAt: string): RunRecord {
   const run = sealRun({
-    schema_version: 2,
+    schema_version: RUN_SCHEMA_VERSION,
     kind: "R",
     intent_id: intent.intent_id,
     observed_at: observedAt,

@@ -7,6 +7,7 @@ import {
   DECLARED_NOT_VERIFIED,
   findingsDigest,
   graphDigest,
+  RUN_SCHEMA_VERSION,
   RunIntentSchema,
   RunRecordSchema,
   sealIntent,
@@ -18,6 +19,7 @@ const dir = mkdtempSync(join(tmpdir(), "runs-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const conditions: Conditions = {
+  features: [],
   review_fingerprint: "fp",
   finder_model: "m1",
   finder_provider: "v",
@@ -31,7 +33,7 @@ const conditions: Conditions = {
 };
 
 const intentBody = {
-  schema_version: 2 as const,
+  schema_version: RUN_SCHEMA_VERSION,
   kind: "I" as const,
   announced_at: "2026-09-23T10:00:00+00:00",
   runner: "alice",
@@ -42,7 +44,7 @@ const intentBody = {
 };
 
 const runBody = (intent_id: string) => ({
-  schema_version: 2 as const,
+  schema_version: RUN_SCHEMA_VERSION,
   kind: "R" as const,
   intent_id,
   observed_at: "2026-09-23T11:00:00+00:00",
@@ -82,6 +84,35 @@ describe("sealIntent", () => {
 
   it("refuses an announcement with no offset", () => {
     expect(() => sealIntent({ ...intentBody, announced_at: "2026-09-23T10:00:00" })).toThrow(/announced_at carries no UTC offset/);
+  });
+});
+
+describe("features", () => {
+  it("is a run schema version newer than the one that had no features", () => {
+    expect(RUN_SCHEMA_VERSION).toBe(3);
+  });
+
+  it("changes the intent id when the feature set changes", () => {
+    const a = sealIntent(intentBody);
+    const b = sealIntent({ ...intentBody, conditions: { ...conditions, features: ["flow"] } });
+    expect(b.intent_id).not.toBe(a.intent_id);
+  });
+
+  it("refuses an unsorted feature set, so one set always hashes the same", () => {
+    expect(() => sealIntent({ ...intentBody, conditions: { ...conditions, features: ["flow", "full_files", "chunked"] } })).toThrow(/features must be sorted/);
+  });
+
+  it("refuses a feature set with a repeat", () => {
+    expect(() => sealIntent({ ...intentBody, conditions: { ...conditions, features: ["flow", "flow"] } })).toThrow(/features must be sorted/);
+  });
+
+  it("refuses an intent that omits features, which is not the same as none", () => {
+    const { features: _drop, ...noFeatures } = conditions;
+    expect(() => sealIntent({ ...intentBody, conditions: noFeatures as Conditions })).toThrow();
+  });
+
+  it("declares features unverified, since no review row records them", () => {
+    expect(DECLARED_NOT_VERIFIED).toContain("features");
   });
 });
 

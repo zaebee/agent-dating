@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { appendOverlay, readOverlay } from "../src/overlay.js";
 import type { D3 } from "../src/records.js";
-import { sealIntent, sealRun } from "../src/runs.js";
+import { RUN_SCHEMA_VERSION, sealIntent, sealRun } from "../src/runs.js";
 
 const dir = mkdtempSync(join(tmpdir(), "overlay-"));
 const path = join(dir, "overlay.jsonl");
@@ -47,6 +47,7 @@ describe("overlay", () => {
 describe("overlay with run records", () => {
   const runsPath = join(dir, "runs.jsonl");
   const conditions = {
+    features: [],
     review_fingerprint: "fp",
     finder_model: "m1",
     finder_provider: "v",
@@ -59,7 +60,7 @@ describe("overlay with run records", () => {
     graph_digest: null,
   };
   const intent = sealIntent({
-    schema_version: 2,
+    schema_version: RUN_SCHEMA_VERSION,
     kind: "I",
     announced_at: "2026-09-23T10:00:00+00:00",
     runner: "alice",
@@ -69,7 +70,7 @@ describe("overlay with run records", () => {
     unestablished: "u",
   });
   const run = sealRun({
-    schema_version: 2,
+    schema_version: RUN_SCHEMA_VERSION,
     kind: "R",
     intent_id: intent.intent_id,
     observed_at: "2026-09-23T11:00:00+00:00",

@@ -1,6 +1,6 @@
 # Run provenance — design
 
-**Status:** v1.2. Approved in brainstorming, amended by planning and by final review.
+**Status:** v1.3. Approved in brainstorming, amended by planning, by final review, and by pre-run investigation.
 
 **What changed in v1.1.** Planning found that §3's claim — supersession "works
 unchanged" — readmitted the mirror attack §5 defends against: a joint covering an
@@ -11,6 +11,14 @@ the joint-only fields sit in one block (§5). Three gaps were also closed: a joi
 in which no task was run by two contributors is refused (§5.1), an observation
 holds at most one completed run per task per arm (§6.1), and intents are
 announced after `prepare` and before `review` (§4.1).
+
+**What changed in v1.3.** Investigating codegraph-brain before the first paid run
+found that `GUARDIAN_FEATURES` decides which context sections a review gets — full
+files, the outbound flow fallback, chunking — while being neither part of
+`review_fingerprint` nor written to the review row (codegraph-brain#505). Two runs
+with identical records could have read different prompts. `Conditions` gains
+`features` (§4.3), it joins `declared_not_verified` (§4.5), and `I` and `R` move to
+schema version 3 (§4.1, §4.2). No version-2 intent or run was ever written.
 
 **What changed in v1.2.** Final review found that a joint trusted each source's
 stated pairs, so a published source with its arms swapped or its runner relabelled
@@ -112,7 +120,7 @@ Written **before** the run is performed.
 
 ```ts
 interface RunIntent {
-  schema_version: 2;
+  schema_version: 3;
   kind: "I";
   /** sha256 of this record minus this field. Carries no outcome. */
   intent_id: string;
@@ -142,7 +150,7 @@ Written after, citing the intent.
 
 ```ts
 interface RunRecord {
-  schema_version: 2;
+  schema_version: 3;
   kind: "R";
   /** sha256 of this whole record minus this field. */
   run_id: string;
@@ -173,6 +181,12 @@ interface RunRecord {
 
 ```ts
 interface Conditions {
+  /**
+   * GUARDIAN_FEATURES, parsed, sorted: the context sections the review gets.
+   * Changes the prompt; not in the fingerprint and not on the review row.
+   * Required — empty means none, and absent is a different claim.
+   */
+  features: string[];
   /** Already digests prompts, context assembly and the selected provider. */
   review_fingerprint: string;
   finder_model: string;
@@ -230,8 +244,9 @@ The runner reads `finder_model` and `skeptic_model` from environment variables.
 The record states which model answered and cannot prove it. Consumers must be
 able to **filter** on which conditions a given record leaves unproven, and prose
 does not filter. On the corpus as it stands the list is at least
-`["finder_model", "finder_provider", "graph_digest", "profile", "skeptic_model",
-"skeptic_provider", "slice", "temperature"]`. `profile` is not on the review row;
+`["features", "finder_model", "finder_provider", "graph_digest", "profile",
+"skeptic_model", "skeptic_provider", "slice", "temperature"]`. `features` and
+`profile` are not on the review row;
 `graph_digest` is whatever the runner hashed, and nothing ties it to the graph the
 review saw; `slice` goes unchecked when a run covers `all`. A list that omits a
 condition implies a verification that never ran.

@@ -5,7 +5,12 @@ import { z } from "zod";
 import { byCodeUnit, canonicalJson } from "./canonical.js";
 import { required, timestampOf } from "./records.js";
 
-export const RUN_SCHEMA_VERSION = 2;
+/**
+ * 3: `Conditions` gained `features`. No version-2 intent or run was ever written,
+ * but the field set changed, and the rule is to bump on any field-set change
+ * rather than reason about who might hold the old shape.
+ */
+export const RUN_SCHEMA_VERSION = 3 as const;
 
 export const digest = (data: string | Uint8Array): string =>
   `sha256:${createHash("sha256").update(data).digest("hex")}`;
@@ -16,8 +21,22 @@ export const digest = (data: string | Uint8Array): string =>
  * Strict: an unknown key is refused rather than hashed in, because a condition
  * nobody here models is one nobody here can hold equal.
  */
+const isSortedUnique = (xs: readonly string[]): boolean =>
+  xs.every((x, i) => i === 0 || byCodeUnit(xs[i - 1] as string, x) < 0);
+
 export const ConditionsSchema = z
   .object({
+    /**
+     * GUARDIAN_FEATURES, parsed: which context sections the review gets —
+     * full files, the outbound flow fallback, chunking. It changes the prompt
+     * and is neither part of `review_fingerprint` nor written to the review row
+     * (codegraph-brain#505), so without it two runs with identical records
+     * could have read different prompts. Empty means "none", explicitly; the
+     * field is required, because absent and none are different claims.
+     */
+    features: z
+      .array(z.string().min(1))
+      .refine(isSortedUnique, { message: "features must be sorted and free of duplicates, so one set always hashes the same" }),
     review_fingerprint: z.string().min(1),
     finder_model: z.string().min(1),
     finder_provider: z.string().min(1),
@@ -35,14 +54,16 @@ export type Conditions = z.infer<typeof ConditionsSchema>;
 export type ConditionKey = keyof Conditions;
 
 /**
- * Stated by the runner and unprovable by the record. The models arrive through
- * environment variables, not flags; `profile` is not on the review row at all;
+ * Stated by the runner and unprovable by the record. The models and `features`
+ * arrive through environment variables, not flags, and no review row records the
+ * latter; `profile` is not on the review row at all;
  * `graph_digest` is whatever the runner hashed, and nothing ties it to the graph
  * the review saw; `slice` goes unchecked whenever the run covered "all". A list
  * rather than prose, so a consumer can filter on it — and a list that omits a
  * condition implies a verification that never ran. Sorted, because it is hashed.
  */
 export const DECLARED_NOT_VERIFIED: readonly ConditionKey[] = [
+  "features",
   "finder_model",
   "finder_provider",
   "graph_digest",

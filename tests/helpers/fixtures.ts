@@ -12,6 +12,7 @@ export const T1 = "2026-08-12T11:00:00+00:00";
 
 /** The fixture rows' conditions; the graph arm carries a digest, the ablated arm none. */
 export const conditionsFor = (graph: boolean, graphDigest = "sha256:g1"): Conditions => ({
+  features: [],
   review_fingerprint: "fp",
   finder_model: "m1",
   finder_provider: "v",
