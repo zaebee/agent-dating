@@ -13,8 +13,8 @@ const SQLITE_HEADER = "SQLite format 3\u0000";
  * two places. Every other key is digested, `workspace_packages` included: it is
  * what TypeScript imports were resolved against.
  */
-const INGEST_BOOKKEEPING: Readonly<Record<string, readonly string[]>> = {
-  ingest_state: ["ingested_at", "root"],
+const INGEST_BOOKKEEPING: Readonly<Record<string, { readonly column: string; readonly values: readonly string[] }>> = {
+  ingest_state: { column: "key", values: ["ingested_at", "root"] },
 };
 
 export function isSqlite(path: string): boolean {
@@ -61,10 +61,10 @@ export function sqliteGraphDigest(path: string): string {
         .all()
         .map((c) => String(c.name));
       hash.update(`${canonicalJson({ table, columns })}\n`);
-      const skipped = INGEST_BOOKKEEPING[table] ?? [];
-      const where = skipped.length === 0 ? "" : ` WHERE key NOT IN (${skipped.map(() => "?").join(",")})`;
+      const skip = INGEST_BOOKKEEPING[table];
+      const where = skip ? ` WHERE ${quoted(skip.column)} NOT IN (${skip.values.map(() => "?").join(",")})` : "";
       const order = columns.map((_, i) => i + 1).join(",");
-      const rows = db.prepare(`SELECT * FROM ${quoted(table)}${where} ORDER BY ${order}`).iterate(...skipped);
+      const rows = db.prepare(`SELECT * FROM ${quoted(table)}${where} ORDER BY ${order}`).iterate(...(skip?.values ?? []));
       for (const row of rows) {
         hash.update(`${canonicalJson(columns.map((c) => cell((row as Record<string, unknown>)[c])))}\n`);
       }

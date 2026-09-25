@@ -64,6 +64,29 @@ function intentById(overlay: string, id: string): RunIntent {
   return hit;
 }
 
+/** `run`: record the review row an intent announced, re-measuring its graph. */
+function recordRun(f: Map<string, string>): number {
+  const intent = intentById(get(f, "overlay"), get(f, "intent"));
+  const matching = reviewsAt(get(f, "reviews")).filter(
+    (r) => r.url === intent.task.url && r.head_sha === intent.task.head_sha && r.arm === intent.arm,
+  );
+  // Exactly one. Two rows for the announced task and arm means the file holds
+  // someone else's run too, and picking one is the refused join again.
+  if (matching.length !== 1) {
+    throw new Error(
+      `${matching.length} rows in ${get(f, "reviews")} match ${intent.task.url}@${intent.task.head_sha} on ` +
+        `arm ${intent.arm}; supply the file this run produced, which holds exactly one`,
+    );
+  }
+  // Re-measured now, after the review: a graph rebuilt since the intent was
+  // announced is refused here rather than copied onto the record unseen.
+  const measured = f.has("graph") ? graphDigest(get(f, "graph")) : null;
+  const run = runFor(intent, matching[0] as ReviewRow, now(), measured);
+  appendOverlay(get(f, "overlay"), [run]);
+  process.stdout.write(`${run.run_id}\n`);
+  return 0;
+}
+
 function commands(sub: string | undefined, rest: readonly string[]): number {
   const spec = requireAxis(loadRegistry("registry/axes.json"), AXIS);
   switch (sub) {
@@ -86,28 +109,8 @@ function commands(sub: string | undefined, rest: readonly string[]): number {
       process.stdout.write(`${graphDigest(get(f, "graph"))}\n`);
       return 0;
     }
-    case "run": {
-      const f = flags(rest, ["intent", "reviews", "overlay"], ["graph"]);
-      const intent = intentById(get(f, "overlay"), get(f, "intent"));
-      const matching = reviewsAt(get(f, "reviews")).filter(
-        (r) => r.url === intent.task.url && r.head_sha === intent.task.head_sha && r.arm === intent.arm,
-      );
-      // Exactly one. Two rows for the announced task and arm means the file holds
-      // someone else's run too, and picking one is the refused join again.
-      if (matching.length !== 1) {
-        throw new Error(
-          `${matching.length} rows in ${get(f, "reviews")} match ${intent.task.url}@${intent.task.head_sha} on ` +
-            `arm ${intent.arm}; supply the file this run produced, which holds exactly one`,
-        );
-      }
-      // Re-measured now, after the review: a graph rebuilt since the intent was
-      // announced is refused here rather than copied onto the record unseen.
-      const measured = f.has("graph") ? graphDigest(get(f, "graph")) : null;
-      const run = runFor(intent, matching[0] as ReviewRow, now(), measured);
-      appendOverlay(get(f, "overlay"), [run]);
-      process.stdout.write(`${run.run_id}\n`);
-      return 0;
-    }
+    case "run":
+      return recordRun(flags(rest, ["intent", "reviews", "overlay"], ["graph"]));
     case "fail": {
       const f = flags(rest, ["intent", "failure", "detail", "overlay"]);
       const failure = get(f, "failure");
