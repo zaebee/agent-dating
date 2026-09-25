@@ -52,6 +52,12 @@ describe("pairRuns", () => {
     expect(() => pairRuns([g.run, other], rows, spec)).toThrow(/2 configurations/);
   });
 
+  it("refuses runs under two feature sets, which are two configurations", () => {
+    const { run_id: _id, ...body } = a.run;
+    const other = sealRun({ ...body, conditions: { ...a.run.conditions, features: ["flow"] } });
+    expect(() => pairRuns([g.run, other], rows, spec)).toThrow(/2 configurations/);
+  });
+
   it("refuses a graph-arm run with no graph_digest", () => {
     const { run_id: _id, ...body } = g.run;
     const bare = sealRun({ ...body, conditions: { ...g.run.conditions, graph_digest: null } });
