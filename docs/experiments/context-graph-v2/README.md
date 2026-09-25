@@ -26,6 +26,20 @@ the gemini provider; slice `graph`; profile `core`; arms `graph` and `ablated`.
 This is the configuration of the corpus's ablated arm, so the result is comparable
 with what exists.
 
+**Features.** `GUARDIAN_FEATURES` unset, declared as `features: []` in every
+intent. That is what the corpus and the published Guardian baseline ran with. It
+is not an empty graph arm: with no features, codegraph-brain's
+`ContextCollector.collect_graph_context` still gives the graph arm a depth-2
+impact graph, in Mermaid, for each changed source file. What it leaves out:
+`flow` (a flow graph where a module has no impact graph), `full_files` and
+`drift` (sections both arms would read or that need declared domains), and
+`chunked`, `axes`, `axes_paired` (several model calls per review, a cost this
+budget does not cover, and a different treatment from the corpus). Neither the
+review row nor `review_fingerprint` records features (codegraph-brain#505), so
+the value is declared, not verified: the runner runs with the variable removed
+from the environment (`env -u GUARDIAN_FEATURES`), not merely left as it happens
+to be.
+
 ## Stopping rules
 
 1. **No additions and no replacements.** A task that fails stays failed. It is not
