@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { byCodeUnit, canonicalJson } from "./canonical.js";
+import { isSqlite, sqliteGraphDigest } from "./graph-digest.js";
 import { required, timestampOf } from "./records.js";
 
 /**
@@ -57,8 +58,8 @@ export type ConditionKey = keyof Conditions;
  * Stated by the runner and unprovable by the record. The models and `features`
  * arrive through environment variables, not flags, and no review row records the
  * latter; `profile` is not on the review row at all;
- * `graph_digest` is whatever the runner hashed, and nothing ties it to the graph
- * the review saw; `slice` goes unchecked whenever the run covered "all". A list
+ * `graph_digest` is re-measured when the run is recorded, which ties it to the
+ * artefact on disk after the review but not to what the review read; `slice` goes unchecked whenever the run covered "all". A list
  * rather than prose, so a consumer can filter on it — and a list that omits a
  * condition implies a verification that never ran. Sorted, because it is hashed.
  */
@@ -187,13 +188,14 @@ function filesUnder(dir: string, prefix = ""): string[] {
 }
 
 /**
- * Digest of a graph artefact: a file by its bytes, a directory by its sorted
+ * Digest of a graph artefact: a SQLite database by its rows (see
+ * `sqliteGraphDigest`), any other file by its bytes, a directory by its sorted
  * relative paths and their contents. Modification times are never read, so the
  * same graph copied to another machine digests the same.
  */
 export function graphDigest(path: string): string {
   const st = statSync(path);
-  if (st.isFile()) return digest(readFileSync(path));
+  if (st.isFile()) return isSqlite(path) ? sqliteGraphDigest(path) : digest(readFileSync(path));
   if (!st.isDirectory()) throw new Error(`${path} is neither a file nor a directory`);
   const files = filesUnder(path).sort(byCodeUnit);
   if (files.length === 0) {

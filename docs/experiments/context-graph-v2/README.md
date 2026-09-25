@@ -63,8 +63,8 @@ rather than worked around.
 - **A re-prepared graph may not match the announced digest.** Whether ingest is
   deterministic is the run provenance spec's open question in §4.4. A byte digest
   of a SQLite file is likely unstable even when the content is identical. And `R`
-  copies `graph_digest` from its intent rather than re-measuring it, so a mismatch
-  would pass silently.
+  copied `graph_digest` from its intent rather than re-measuring it, so a mismatch
+  would have passed silently. (Both since addressed; see below.)
 - **`prepare` changes another project's working state.** It switches checkouts and
   replaces graph databases in codegraph-brain's `.martian-workspace`, which the
   existing corpus was built from.
@@ -76,9 +76,11 @@ size are already fixed above, so announcing late does not reopen them.
 ## Decisions open before the first run
 
 - Whether the runs use codegraph-brain's shared workspace or an isolated one.
-- Whether `graph_digest` becomes a logical digest of the graph's content, and
-  whether ingest is deterministic. That can be tested for free on one task, twice,
-  in an isolated location.
+- ~~Whether `graph_digest` becomes a logical digest of the graph's content, and
+  whether ingest is deterministic.~~ Settled before any run: `graph_digest` is a
+  digest of the graph's rows, re-measured by `run --graph`; one test of two
+  ingests of one commit gave identical content and different bytes
+  ([determinism.md](determinism.md)).
 - Guardian now writes a `temperature_source` field that the corpus rows did not
   have. The version-2 path does not classify row fields, but the version-1 registry
   would refuse such rows until the field is registered.

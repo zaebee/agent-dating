@@ -6,7 +6,7 @@ import { observationId } from "../src/canonical.js";
 import { main } from "../src/cli-runs.js";
 import { readOverlay } from "../src/overlay.js";
 import type { D1V2 } from "../src/records.js";
-import type { RunIntent, RunRecord } from "../src/runs.js";
+import { graphDigest, type RunIntent, type RunRecord } from "../src/runs.js";
 import { ablatedRow, conditionsFor, graphRow, withVerdict } from "./helpers/fixtures.js";
 
 const dir = mkdtempSync(join(tmpdir(), "runs-e2e-"));
@@ -29,7 +29,10 @@ function writeReviews(): void {
   writeFileSync(at("bob.jsonl"), jsonl(stamp([bobGraph, bobAblated])));
   writeFileSync(at("both.jsonl"), jsonl(stamp([graphRow, ablatedRow, bobGraph, bobAblated])));
 }
-writeFileSync(at("graph.json"), JSON.stringify(conditionsFor(true)));
+// The graph the graph arm is announced with and re-measured against.
+writeFileSync(at("graph.bin"), "graph");
+writeFileSync(at("other-graph.bin"), "another graph");
+writeFileSync(at("graph.json"), JSON.stringify(conditionsFor(true, graphDigest(at("graph.bin")))));
 writeFileSync(at("ablated.json"), JSON.stringify(conditionsFor(false)));
 
 const intentOf = (runner: string, arm: string): string => {
@@ -37,6 +40,13 @@ const intentOf = (runner: string, arm: string): string => {
   if (!hit) throw new Error(`no intent for ${runner}/${arm}`);
   return hit.intent_id;
 };
+
+/** `run`'s arguments; the graph arm re-measures its graph, the ablated arm has none. */
+const record = (intent: string, arm: string, reviews: string, to: string = overlay): number =>
+  main([
+    "run", "--intent", intent, "--reviews", at(reviews), "--overlay", to,
+    ...(arm === "graph" ? ["--graph", at("graph.bin")] : []),
+  ]);
 
 const announce = (runner: string, arm: "graph" | "ablated") =>
   main([
@@ -61,7 +71,7 @@ describe("runs CLI end to end", () => {
     writeReviews();
     for (const runner of ["alice", "bob"]) {
       for (const arm of ["graph", "ablated"]) {
-        expect(main(["run", "--intent", intentOf(runner, arm), "--reviews", at(`${runner}.jsonl`), "--overlay", overlay])).toBe(0);
+        expect(record(intentOf(runner, arm), arm, `${runner}.jsonl`)).toBe(0);
       }
     }
   });
@@ -124,7 +134,7 @@ describe("runs CLI after a re-run", () => {
       expect(announceTo(arm)).toBe(0);
       writeReviews();
       const intent = readOverlay(rerunOverlay).filter((r): r is RunIntent => r.kind === "I").at(-1) as RunIntent;
-      expect(main(["run", "--intent", intent.intent_id, "--reviews", at("alice.jsonl"), "--overlay", rerunOverlay])).toBe(0);
+      expect(record(intent.intent_id, arm, "alice.jsonl", rerunOverlay)).toBe(0);
     }
     expect(runIds()).toHaveLength(3);
   });
@@ -161,6 +171,29 @@ describe("runs CLI refusals", () => {
   });
 
   it("refuses a reviews file holding two rows for the announced task and arm", () => {
-    expect(main(["run", "--intent", intentOf("alice", "graph"), "--reviews", at("both.jsonl"), "--overlay", overlay])).toBe(2);
+    expect(record(intentOf("alice", "graph"), "graph", "both.jsonl")).toBe(2);
+  });
+
+  it("refuses a graph-arm run recorded without re-measuring its graph", () => {
+    expect(main(["run", "--intent", intentOf("carol", "graph"), "--reviews", at("alice.jsonl"), "--overlay", overlay])).toBe(2);
+  });
+
+  it("refuses a graph-arm run whose graph is not the one announced", () => {
+    const args = ["--intent", intentOf("carol", "graph"), "--reviews", at("alice.jsonl"), "--overlay", overlay];
+    expect(main(["run", ...args, "--graph", at("other-graph.bin")])).toBe(2);
+  });
+});
+
+describe("runs CLI digest", () => {
+  it("prints the digest an intent announces and a run re-measures", () => {
+    const out: string[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string) => (out.push(chunk), true)) as typeof process.stdout.write;
+    try {
+      expect(main(["digest", "--graph", at("graph.bin")])).toBe(0);
+    } finally {
+      process.stdout.write = write;
+    }
+    expect(out.join("")).toBe(`${graphDigest(at("graph.bin"))}\n`);
   });
 });

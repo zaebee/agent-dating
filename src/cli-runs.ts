@@ -10,13 +10,14 @@ import { pairRuns } from "./pair-runs.js";
 import { failedRunFor, intentFor, runFor } from "./record.js";
 import type { D1V2 } from "./records.js";
 import { loadRegistry, requireAxis } from "./registry.js";
-import { ConditionsSchema, FAILURES, type FailureKind, type RunIntent, type RunRecord } from "./runs.js";
+import { ConditionsSchema, FAILURES, graphDigest, type FailureKind, type RunIntent, type RunRecord } from "./runs.js";
 
 const AXIS = "context.graph";
 const USAGE = [
   "usage: bun src/cli-runs.ts <command> --flag value ...",
   "  intent --runner --url --head --project --arm --conditions <file.json> --overlay",
-  "  run    --intent --reviews <file.jsonl> --overlay",
+  "  digest --graph <path>",
+  "  run    --intent --reviews <file.jsonl> --overlay [--graph <path>, required on the graph arm]",
   "  fail   --intent --failure <prepare|ingest|model-error|parse|timeout> --detail --overlay",
   "  derive (--runner <id> | --runs <run_id,run_id,...>) --reviews <file.jsonl> --overlay",
   "  joint  --sources <id,id,...> --reviews <file.jsonl> --overlay",
@@ -63,6 +64,29 @@ function intentById(overlay: string, id: string): RunIntent {
   return hit;
 }
 
+/** `run`: record the review row an intent announced, re-measuring its graph. */
+function recordRun(f: Map<string, string>): number {
+  const intent = intentById(get(f, "overlay"), get(f, "intent"));
+  const matching = reviewsAt(get(f, "reviews")).filter(
+    (r) => r.url === intent.task.url && r.head_sha === intent.task.head_sha && r.arm === intent.arm,
+  );
+  // Exactly one. Two rows for the announced task and arm means the file holds
+  // someone else's run too, and picking one is the refused join again.
+  if (matching.length !== 1) {
+    throw new Error(
+      `${matching.length} rows in ${get(f, "reviews")} match ${intent.task.url}@${intent.task.head_sha} on ` +
+        `arm ${intent.arm}; supply the file this run produced, which holds exactly one`,
+    );
+  }
+  // Re-measured now, after the review: a graph rebuilt since the intent was
+  // announced is refused here rather than copied onto the record unseen.
+  const measured = f.has("graph") ? graphDigest(get(f, "graph")) : null;
+  const run = runFor(intent, matching[0] as ReviewRow, now(), measured);
+  appendOverlay(get(f, "overlay"), [run]);
+  process.stdout.write(`${run.run_id}\n`);
+  return 0;
+}
+
 function commands(sub: string | undefined, rest: readonly string[]): number {
   const spec = requireAxis(loadRegistry("registry/axes.json"), AXIS);
   switch (sub) {
@@ -79,25 +103,14 @@ function commands(sub: string | undefined, rest: readonly string[]): number {
       process.stdout.write(`${intent.intent_id}\n`);
       return 0;
     }
-    case "run": {
-      const f = flags(rest, ["intent", "reviews", "overlay"]);
-      const intent = intentById(get(f, "overlay"), get(f, "intent"));
-      const matching = reviewsAt(get(f, "reviews")).filter(
-        (r) => r.url === intent.task.url && r.head_sha === intent.task.head_sha && r.arm === intent.arm,
-      );
-      // Exactly one. Two rows for the announced task and arm means the file holds
-      // someone else's run too, and picking one is the refused join again.
-      if (matching.length !== 1) {
-        throw new Error(
-          `${matching.length} rows in ${get(f, "reviews")} match ${intent.task.url}@${intent.task.head_sha} on ` +
-            `arm ${intent.arm}; supply the file this run produced, which holds exactly one`,
-        );
-      }
-      const run = runFor(intent, matching[0] as ReviewRow, now());
-      appendOverlay(get(f, "overlay"), [run]);
-      process.stdout.write(`${run.run_id}\n`);
+    case "digest": {
+      // The one way to compute graph_digest, so an intent and its run hash alike.
+      const f = flags(rest, ["graph"]);
+      process.stdout.write(`${graphDigest(get(f, "graph"))}\n`);
       return 0;
     }
+    case "run":
+      return recordRun(flags(rest, ["intent", "reviews", "overlay"], ["graph"]));
     case "fail": {
       const f = flags(rest, ["intent", "failure", "detail", "overlay"]);
       const failure = get(f, "failure");

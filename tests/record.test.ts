@@ -25,42 +25,57 @@ describe("runFor", () => {
   });
 
   it("refuses a row from a different commit", () => {
-    expect(() => runFor(intent, { ...graphRow, head_sha: "h9" }, "2026-09-23T11:00:00+00:00")).toThrow(/task.head_sha/);
+    expect(() => runFor(intent, { ...graphRow, head_sha: "h9" }, "2026-09-23T11:00:00+00:00", intent.conditions.graph_digest)).toThrow(/task.head_sha/);
   });
 
   it("refuses a row from the other arm", () => {
-    expect(() => runFor(intent, ablatedRow, "2026-09-23T11:00:00+00:00")).toThrow(/arm: announced "graph", ran "ablated"/);
+    expect(() => runFor(intent, ablatedRow, "2026-09-23T11:00:00+00:00", intent.conditions.graph_digest)).toThrow(/arm: announced "graph", ran "ablated"/);
   });
 
   it("refuses a row with no arm at all", () => {
     const { arm: _drop, ...noArm } = graphRow;
-    expect(() => runFor(intent, noArm, "2026-09-23T11:00:00+00:00")).toThrow(/carries no arm/);
+    expect(() => runFor(intent, noArm, "2026-09-23T11:00:00+00:00", intent.conditions.graph_digest)).toThrow(/carries no arm/);
   });
 
   it("refuses a run observed before its intent was announced", () => {
-    expect(() => runFor(intent, graphRow, "2026-08-12T08:00:00+00:00")).toThrow(/before it was announced/);
+    expect(() => runFor(intent, graphRow, "2026-08-12T08:00:00+00:00", intent.conditions.graph_digest)).toThrow(/before it was announced/);
   });
 
   it("refuses a row reviewed before its intent was announced", () => {
     const late = intentFor({ ...inputOf(intent), announcedAt: "2026-08-12T10:30:00+00:00" });
-    expect(() => runFor(late, graphRow, "2026-08-12T11:00:00+00:00")).toThrow(/reviewed at .* before it was announced/);
+    expect(() => runFor(late, graphRow, "2026-08-12T11:00:00+00:00", late.conditions.graph_digest)).toThrow(/reviewed at .* before it was announced/);
   });
 
   it("refuses a graph-arm row whose graph was never built", () => {
-    expect(() => runFor(intent, { ...graphRow, had_graph: false }, "2026-08-12T11:00:00+00:00")).toThrow(/had_graph/);
+    expect(() => runFor(intent, { ...graphRow, had_graph: false }, "2026-08-12T11:00:00+00:00", intent.conditions.graph_digest)).toThrow(/had_graph/);
   });
 
   it("refuses a row from another slice when the run was restricted to one", () => {
-    expect(() => runFor(intent, { ...graphRow, pr_slice: "diff-only" }, "2026-08-12T11:00:00+00:00")).toThrow(/slice/);
+    expect(() => runFor(intent, { ...graphRow, pr_slice: "diff-only" }, "2026-08-12T11:00:00+00:00", intent.conditions.graph_digest)).toThrow(/slice/);
   });
 
   it("does not compare slice when the run covered every slice", () => {
     const all = intentFor({ ...inputOf(intent), conditions: { ...intent.conditions, slice: "all" } });
-    expect(runFor(all, graphRow, "2026-08-12T11:00:00+00:00").outcome.ok).toBe(true);
+    expect(runFor(all, graphRow, "2026-08-12T11:00:00+00:00", all.conditions.graph_digest).outcome.ok).toBe(true);
+  });
+
+  it("refuses a graph-arm run whose graph was not re-measured", () => {
+    expect(() => runFor(intent, graphRow, "2026-09-23T11:00:00+00:00", null)).toThrow(/re-measured/);
+  });
+
+  it("refuses a graph-arm run whose graph differs from the one announced", () => {
+    expect(() => runFor(intent, graphRow, "2026-09-23T11:00:00+00:00", "sha256:other")).toThrow(
+      /graph_digest: announced "sha256:g1", measured "sha256:other"/,
+    );
+  });
+
+  it("refuses a measured graph on the arm that withholds it", () => {
+    const { intent: ablated } = recorded("alice", ablatedRow);
+    expect(() => runFor(ablated, ablatedRow, "2026-09-23T11:00:00+00:00", "sha256:g1")).toThrow(/announced no graph/);
   });
 
   it("records a parse failure the producer reported as a failed run", () => {
-    const failed = runFor(intent, { ...graphRow, parse_failed: true }, "2026-09-23T11:00:00+00:00");
+    const failed = runFor(intent, { ...graphRow, parse_failed: true }, "2026-09-23T11:00:00+00:00", intent.conditions.graph_digest);
     expect(failed.outcome).toMatchObject({ ok: false, failure: "parse" });
   });
 });
