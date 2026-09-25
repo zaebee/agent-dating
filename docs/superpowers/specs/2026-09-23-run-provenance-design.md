@@ -222,6 +222,18 @@ conditions match except `graph_digest` did not run against the same graph, and
 pooled, and the divergence is recorded on the face of the joint observation,
 where a consumer decides what it is worth.
 
+**The digest is of the graph's content, and it is measured twice.** A SQLite
+graph is digested by its rows, not its bytes: pages depend on insertion order
+and free space, and codegraph-brain's `ingest_state` holds the checkout's
+absolute path and the ingested files' largest mtime, neither of which changes
+what a query returns. `cli-runs digest --graph` is the one way to compute it.
+The intent carries the digest measured after `prepare`; `run --graph`
+re-measures the artefact when the run is recorded, after the review, and a
+different digest refuses the record. A graph rebuilt between announcement and
+review is therefore caught rather than copied onto `R` unseen. It still shows
+only which artefact was on disk, not what the review read, so `graph_digest`
+stays in `declared_not_verified`.
+
 **A joint re-derives every source from that source's own runs** and refuses any
 difference in contributors, pairs, metric, judge or admissibility. A source is a
 record anyone can publish; taken as written, one with its arms swapped would turn
@@ -437,7 +449,8 @@ would double the cost and add nothing.
 - **Authorisation and funding of a proposal** — issue #3 and issue #5. Nothing
   here requires either, and the narrowing was agreed before design began.
 - **Whether ingest is deterministic.** §4.4 records a digest so divergence is
-  detectable and deliberately makes no claim. Establishing it is separate work,
+  detectable and deliberately makes no claim. One test agrees on content
+  (docs/experiments/context-graph-v2/determinism.md); establishing it is separate work,
   and either answer would change this document's §5.1: determinism would let
   pooling require `graph_digest` exactly, and a proof of non-determinism would
   make `graph_agreement: "divergent"` the expected case rather than a caveat.

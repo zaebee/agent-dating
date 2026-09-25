@@ -10,13 +10,14 @@ import { pairRuns } from "./pair-runs.js";
 import { failedRunFor, intentFor, runFor } from "./record.js";
 import type { D1V2 } from "./records.js";
 import { loadRegistry, requireAxis } from "./registry.js";
-import { ConditionsSchema, FAILURES, type FailureKind, type RunIntent, type RunRecord } from "./runs.js";
+import { ConditionsSchema, FAILURES, graphDigest, type FailureKind, type RunIntent, type RunRecord } from "./runs.js";
 
 const AXIS = "context.graph";
 const USAGE = [
   "usage: bun src/cli-runs.ts <command> --flag value ...",
   "  intent --runner --url --head --project --arm --conditions <file.json> --overlay",
-  "  run    --intent --reviews <file.jsonl> --overlay",
+  "  digest --graph <path>",
+  "  run    --intent --reviews <file.jsonl> --overlay [--graph <path>, required on the graph arm]",
   "  fail   --intent --failure <prepare|ingest|model-error|parse|timeout> --detail --overlay",
   "  derive (--runner <id> | --runs <run_id,run_id,...>) --reviews <file.jsonl> --overlay",
   "  joint  --sources <id,id,...> --reviews <file.jsonl> --overlay",
@@ -79,8 +80,14 @@ function commands(sub: string | undefined, rest: readonly string[]): number {
       process.stdout.write(`${intent.intent_id}\n`);
       return 0;
     }
+    case "digest": {
+      // The one way to compute graph_digest, so an intent and its run hash alike.
+      const f = flags(rest, ["graph"]);
+      process.stdout.write(`${graphDigest(get(f, "graph"))}\n`);
+      return 0;
+    }
     case "run": {
-      const f = flags(rest, ["intent", "reviews", "overlay"]);
+      const f = flags(rest, ["intent", "reviews", "overlay"], ["graph"]);
       const intent = intentById(get(f, "overlay"), get(f, "intent"));
       const matching = reviewsAt(get(f, "reviews")).filter(
         (r) => r.url === intent.task.url && r.head_sha === intent.task.head_sha && r.arm === intent.arm,
@@ -93,7 +100,10 @@ function commands(sub: string | undefined, rest: readonly string[]): number {
             `arm ${intent.arm}; supply the file this run produced, which holds exactly one`,
         );
       }
-      const run = runFor(intent, matching[0] as ReviewRow, now());
+      // Re-measured now, after the review: a graph rebuilt since the intent was
+      // announced is refused here rather than copied onto the record unseen.
+      const measured = f.has("graph") ? graphDigest(get(f, "graph")) : null;
+      const run = runFor(intent, matching[0] as ReviewRow, now(), measured);
       appendOverlay(get(f, "overlay"), [run]);
       process.stdout.write(`${run.run_id}\n`);
       return 0;

@@ -45,5 +45,5 @@ export function recorded(
     conditions: conditionsFor(arm === "graph", opts.graphDigest),
     announcedAt: T0,
   });
-  return { intent, run: runFor(intent, row, opts.at ?? T1) };
+  return { intent, run: runFor(intent, row, opts.at ?? T1, intent.conditions.graph_digest) };
 }

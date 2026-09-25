@@ -28,7 +28,8 @@ const INTENT_UNESTABLISHED =
 
 const RUN_UNESTABLISHED =
   "records the conditions a run was given and what it produced; does not establish that the declared " +
-  "models answered (see declared_not_verified), nor that the graph artefact would be rebuilt identically";
+  "models answered (see declared_not_verified), that the review read the graph artefact measured when the run " +
+  "was recorded, nor that the artefact would be rebuilt identically";
 
 export function intentFor(i: IntentInput): RunIntent {
   return sealIntent({
@@ -137,11 +138,33 @@ function sealed(intent: RunIntent, outcome: RunRecord["outcome"], observedAt: st
   return run;
 }
 
-/** The run a review row records, refused if the row is not what was announced. */
-export function runFor(intent: RunIntent, row: ReviewRow, observedAt: string): RunRecord {
-  const problems = rowProblems(intent, row);
+/**
+ * Where the graph found at record time differs from the one announced.
+ *
+ * `measured` is `graphDigest` of the artefact the review used, taken when the
+ * run is recorded — after the review, so a graph rebuilt in between is caught.
+ * It shows that artefact is the announced one, not that the review read it,
+ * which is why `graph_digest` stays in `declared_not_verified`.
+ */
+export function graphProblems(intent: RunIntent, measured: string | null): string[] {
+  const announced = intent.conditions.graph_digest;
+  if (announced === null) {
+    return measured === null ? [] : [`graph_digest: the intent announced no graph, yet ${JSON.stringify(measured)} was measured`];
+  }
+  if (measured === null) return ["graph_digest: the graph arm's graph was not re-measured when the run was recorded"];
+  return measured === announced
+    ? []
+    : [`graph_digest: announced ${JSON.stringify(announced)}, measured ${JSON.stringify(measured)} when the run was recorded`];
+}
+
+/**
+ * The run a review row records, refused if the row is not what was announced
+ * or the graph measured now is not the one announced.
+ */
+export function runFor(intent: RunIntent, row: ReviewRow, observedAt: string, measuredGraph: string | null): RunRecord {
+  const problems = [...rowProblems(intent, row), ...graphProblems(intent, measuredGraph)];
   if (problems.length > 0) {
-    throw new Error(`row does not match intent ${intent.intent_id}:\n  ${problems.join("\n  ")}`);
+    throw new Error(`run does not match intent ${intent.intent_id}:\n  ${problems.join("\n  ")}`);
   }
   const outcome: RunRecord["outcome"] =
     (row as Record<string, unknown>).parse_failed === true
