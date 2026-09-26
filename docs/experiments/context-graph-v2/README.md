@@ -107,7 +107,12 @@ Isolated from codegraph-brain's working state, in both code and data.
 CGV2=~/projects/cgv2                       # any directory outside both repositories
 git -C ~/projects/ownima/codegraph-brain worktree add --detach "$CGV2/guardian" \
   db8c578272671c0f06f454c4402ae2f60b05a93d
-GUARDIAN="uv run --project $CGV2/guardian python $CGV2/guardian/scripts/guardian_martian.py"
+# An array, not a string: zsh does not split an unquoted $VAR into words.
+GUARDIAN=(uv run --project "$CGV2/guardian" python "$CGV2/guardian/scripts/guardian_martian.py")
+# The runner's default paths are relative to the current directory, so the plan is
+# always passed. It must be the file selection.json was drawn from:
+PLAN="$CGV2/guardian/benchmarks/martian-plan.json"
+sha256sum "$PLAN"   # 859d172d2d5f7590f0e881155559527d35de06f0a5242f0685f719a4cfc737a3
 
 # The environment is set, not inherited: features, temperature and the models are
 # declared, not verified (run provenance §4.5).
@@ -117,16 +122,16 @@ review_env() {
     GUARDIAN_SKEPTIC=gemini GUARDIAN_SKEPTIC_MODEL=gemini-3.5-flash "$@"
 }
 
-# Task k, pull request N of owner/repo:
-$GUARDIAN prepare --workspace "$CGV2/ws" --pr N          # free: clone, checkout, ingest
-bun src/cli-runs.ts digest --graph "$CGV2/ws/owner__repo.db"   # into the graph arm's conditions
+# Task k: pull request <N> of <owner>/<repo>.
+"${GUARDIAN[@]}" prepare --plan "$PLAN" --workspace "$CGV2/ws" --pr <N>       # free: clone, checkout, ingest
+bun src/cli-runs.ts digest --graph "$CGV2/ws/<owner>__<repo>.db"   # into the graph arm's conditions
 bun src/cli-runs.ts intent ... --arm graph   ...           # both intents, before any review
 bun src/cli-runs.ts intent ... --arm ablated ...
-review_env $GUARDIAN review --workspace "$CGV2/ws" --pr N --slice graph --out "$CGV2/reviews/N-graph.jsonl"
-review_env $GUARDIAN review --workspace "$CGV2/ws" --pr N --slice graph --no-graph --out "$CGV2/reviews/N-ablated.jsonl"
-bun src/cli-runs.ts run --intent <graph intent> --reviews "$CGV2/reviews/N-graph.jsonl" \
-  --graph "$CGV2/ws/owner__repo.db" --overlay <overlay>
-bun src/cli-runs.ts run --intent <ablated intent> --reviews "$CGV2/reviews/N-ablated.jsonl" --overlay <overlay>
+review_env "${GUARDIAN[@]}" review --plan "$PLAN" --workspace "$CGV2/ws" --pr <N> --slice graph --out "$CGV2/reviews/<N>-graph.jsonl"
+review_env "${GUARDIAN[@]}" review --plan "$PLAN" --workspace "$CGV2/ws" --pr <N> --slice graph --no-graph --out "$CGV2/reviews/<N>-ablated.jsonl"
+bun src/cli-runs.ts run --intent <graph intent> --reviews "$CGV2/reviews/<N>-graph.jsonl" \
+  --graph "$CGV2/ws/<owner>__<repo>.db" --overlay <overlay>
+bun src/cli-runs.ts run --intent <ablated intent> --reviews "$CGV2/reviews/<N>-ablated.jsonl" --overlay <overlay>
 ```
 
 `review` re-ingests only when the graph's commit marker is not the task's head,
